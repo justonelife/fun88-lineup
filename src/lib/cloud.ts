@@ -1,5 +1,5 @@
-import { foldPersisted, migrate as migrateSquadState, useSquad, type PersistedSquad } from '../store/useSquad'
-import { ENVELOPE_VERSION, type SquadEnvelope } from './squadFile'
+import { useVersions } from '../store/useVersions'
+import { resolveState, type SquadEnvelope } from './squadFile'
 
 /** Excludes ambiguous glyphs 0/O and 1/I/L/U per the server-side format check
  *  in `netlify/functions/state.mts` — 33 symbols, 8 chars ≈ 41 bits. */
@@ -59,8 +59,17 @@ export function fnv1a(str: string): string {
   return (h >>> 0).toString(16)
 }
 
-export function hashState(state: PersistedSquad): string {
-  const json = JSON.stringify(state)
+/** Covers the whole version set, not just the active squad — otherwise a
+ *  rename or a delete would leave `state` untouched and the "nothing changed"
+ *  guard would swallow the push. `updatedAt`/`device` are excluded on purpose:
+ *  they change on every build and would defeat the guard entirely. */
+export function hashEnvelope(envelope: SquadEnvelope): string {
+  const json = JSON.stringify({
+    state: envelope.state,
+    activeVersionId: envelope.activeVersionId,
+    versions: envelope.versions,
+    files: envelope.files,
+  })
   return `${json.length}:${fnv1a(json)}`
 }
 
@@ -132,22 +141,12 @@ export async function deleteState(code: string): Promise<void> {
   if (!res.ok && res.status !== 404) throw new CloudError(res.status)
 }
 
-/** Resolves an envelope's `state` against the client's known schema version —
- *  refuses anything newer than we understand, migrates anything older, per
- *  plans/database.md §6.2. */
-export function resolveEnvelopeState(envelope: SquadEnvelope): PersistedSquad | 'too-new' {
-  if (envelope.v > ENVELOPE_VERSION) return 'too-new'
-  if (envelope.v < ENVELOPE_VERSION) {
-    return migrateSquadState(envelope.state, envelope.v) as unknown as PersistedSquad
-  }
-  return envelope.state
-}
-
-/** Folds a cloud envelope onto the live store through the same defences a
- *  persist rehydrate takes — never a raw `setState(envelope.state)`. */
+/** Installs a cloud envelope: the whole version set when the blob carries one
+ *  (v4+), otherwise just the active version's content. Always folded through
+ *  the same defences a persist rehydrate takes — never a raw setState. */
 export function adoptEnvelope(envelope: SquadEnvelope): 'ok' | 'too-new' {
-  const state = resolveEnvelopeState(envelope)
+  const state = resolveState(envelope.v, envelope.state)
   if (state === 'too-new') return 'too-new'
-  useSquad.setState(foldPersisted(state, useSquad.getState()), true)
+  useVersions.getState().adoptEnvelope(envelope, state)
   return 'ok'
 }

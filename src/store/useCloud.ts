@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { useSquad } from './useSquad'
+import { useVersions } from './useVersions'
 import { toast } from './useToast'
 import { buildEnvelope, type SquadEnvelope } from '../lib/squadFile'
 import {
@@ -11,7 +12,7 @@ import {
   formatCodeGrouped,
   generateCode,
   getState,
-  hashState,
+  hashEnvelope,
   headState,
   isValidCode,
   normaliseCode,
@@ -124,7 +125,7 @@ export const useCloud = create<CloudState>()(
           )
           return
         }
-        const hash = hashState(envelope.state)
+        const hash = hashEnvelope(envelope)
         if (hash === lastHash) {
           set({ status: 'saved' })
           return
@@ -171,7 +172,10 @@ export const useCloud = create<CloudState>()(
           set({ status: 'error' })
           return false
         }
-        lastHash = hashState(envelope.state)
+        // Re-hash from what actually landed, not from the wire: `foldPersisted`
+        // can add newly-shipped seed players, and that difference has to be
+        // pushable rather than swallowed by the "nothing changed" guard.
+        lastHash = hashEnvelope(buildEnvelope())
         return true
       }
 
@@ -202,7 +206,7 @@ export const useCloud = create<CloudState>()(
           try {
             const envelope = buildEnvelope(get().device)
             const res = await putState(code, envelope)
-            lastHash = hashState(envelope.state)
+            lastHash = hashEnvelope(envelope)
             set({ lastPushedAt: res.updatedAt, lastPulledAt: res.updatedAt, status: 'saved' })
             toast('Squad saved to the cloud.', 'ok')
           } catch {
@@ -380,7 +384,7 @@ export const useCloud = create<CloudState>()(
           const envelope = buildEnvelope(s.device)
           const size = checkEnvelopeSize(envelope)
           if (size.overHard) return
-          const hash = hashState(envelope.state)
+          const hash = hashEnvelope(envelope)
           if (hash === lastHash) return
           clearTimer()
           void fetch(`/api/state?code=${encodeURIComponent(s.code)}`, {
@@ -405,6 +409,8 @@ export const useCloud = create<CloudState>()(
   ),
 )
 
-// The only network trigger in the app: every squad mutation marks the cloud
-// link dirty. No code linked ⇒ `markDirty` no-ops ⇒ zero requests.
+// The only network triggers in the app: a squad mutation (the active version's
+// content) or a version CRUD (the set itself). No code linked ⇒ `markDirty`
+// no-ops ⇒ zero requests.
 useSquad.subscribe(() => useCloud.getState().markDirty())
+useVersions.subscribe(() => useCloud.getState().markDirty())

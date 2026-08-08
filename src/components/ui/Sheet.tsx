@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 
 /** Ignore scrim pointerdowns this soon after mount — covers synthesized click/pointer timing on touch browsers. */
@@ -34,7 +35,12 @@ export function Sheet({ open, onClose, children, label }: Props) {
     }
   }, [open, onClose])
 
-  return (
+  /* Portalled to <body> on purpose: `position: fixed` is measured against the
+   * nearest ancestor with a filter/backdrop-filter/transform, and this sheet is
+   * mounted from inside the backdrop-blurred sticky header. Left in place it
+   * sizes itself to the header's 136px box and half the sheet lands above the
+   * top of the screen. */
+  return createPortal(
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
@@ -73,6 +79,7 @@ export function Sheet({ open, onClose, children, label }: Props) {
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }

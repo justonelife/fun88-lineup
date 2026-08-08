@@ -3,8 +3,9 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useVersus, type TeamDerived } from '../store/derived'
 import { MAX_SUBS, useSquad } from '../store/useSquad'
 import { CLOUD_STATUS_META, useCloud } from '../store/useCloud'
+import { useActiveVersionName } from '../store/useVersions'
 import { useDelta } from '../lib/useDelta'
-import { CloudSheet } from './CloudSheet'
+import { VersionsSheet } from './VersionsSheet'
 import { Tappable } from './ui/Tappable'
 
 function chemTone(v: number): string {
@@ -108,20 +109,50 @@ interface Props {
  * same metrics, same type sizes, mirrored around the VS. The active side is the
  * only one at full opacity, with an accent rule under it.
  */
-function CloudPill({ onTap }: { onTap: () => void }) {
+/**
+ * The one way into the Versions sheet, and deliberately the loudest control on
+ * this row: labelled, boxed, and carrying the open version's name so the state
+ * it opens is legible before you tap it. The old status-dot pill said nothing
+ * and read as decoration — the owner never found it.
+ */
+function VersionsButton({ onTap }: { onTap: () => void }) {
   const status = useCloud((s) => s.status)
   const meta = CLOUD_STATUS_META[status]
+  const name = useActiveVersionName()
   return (
-    <Tappable ariaLabel="Cloud sync" onTap={onTap} className="tap flex shrink-0 items-center gap-1.5 rounded-full px-1.5">
+    <Tappable
+      ariaLabel={`Versions — ${name} open`}
+      onTap={onTap}
+      className="tap btn-ghost flex shrink-0 items-center gap-1.5 rounded-full py-1.5 pr-2 pl-2.5"
+      style={{ borderColor: 'color-mix(in srgb, var(--color-gold-400) 40%, transparent)' }}
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="shrink-0 text-gold-300"
+        aria-hidden="true"
+      >
+        <path d="m12 2 9 5-9 5-9-5 9-5Z" />
+        <path d="m3 12 9 5 9-5" />
+        <path d="m3 17 9 5 9-5" />
+      </svg>
+      <span className="display text-2xs tracking-wide text-ink">Versions</span>
+      <span className="max-w-[5.5rem] truncate text-2xs text-gold-300">{name}</span>
       <span
-        className={`size-1.5 rounded-full ${meta.pulse ? 'animate-pulse' : ''}`}
+        className={`size-1.5 shrink-0 rounded-full ${meta.pulse ? 'animate-pulse' : ''}`}
+        aria-label={meta.label}
         style={
           status === 'local'
             ? { boxShadow: 'inset 0 0 0 1px var(--color-ink-faint)' }
             : { background: meta.dot }
         }
       />
-      <span className="label-micro">{meta.label}</span>
     </Tappable>
   )
 }
@@ -129,7 +160,7 @@ function CloudPill({ onTap }: { onTap: () => void }) {
 export function Header({ onPlay }: Props) {
   const { home, away, activeSide } = useVersus()
   const setActiveSide = useSquad((s) => s.setActiveSide)
-  const [cloudOpen, setCloudOpen] = useState(false)
+  const [versionsOpen, setVersionsOpen] = useState(false)
 
   return (
     <header className="pt-safe sticky top-0 z-30 border-b border-hairline bg-base/85 backdrop-blur-xl">
@@ -167,17 +198,14 @@ export function Header({ onPlay }: Props) {
           <Pips n={home.subsLeft} accent={home.meta.accent} align="left" />
           <span className="label-micro truncate">{home.formation.name}</span>
         </span>
-        <span className="flex shrink-0 items-center gap-2">
-          <span className="label-micro">7 a side</span>
-          <CloudPill onTap={() => setCloudOpen(true)} />
-        </span>
+        <VersionsButton onTap={() => setVersionsOpen(true)} />
         <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
           <span className="label-micro truncate">{away.formation.name}</span>
           <Pips n={away.subsLeft} accent={away.meta.accent} align="right" />
         </span>
       </div>
 
-      <CloudSheet open={cloudOpen} onClose={() => setCloudOpen(false)} />
+      <VersionsSheet open={versionsOpen} onClose={() => setVersionsOpen(false)} />
     </header>
   )
 }

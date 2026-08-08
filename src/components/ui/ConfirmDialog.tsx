@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { Tappable } from './Tappable'
 
@@ -41,7 +42,8 @@ export function ConfirmDialog({
     return () => document.removeEventListener('keydown', onKey)
   }, [open, onCancel])
 
-  return (
+  // Portalled for the same reason as `Sheet` — see the note there.
+  return createPortal(
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-[65] grid place-items-center px-5">
@@ -96,6 +98,7 @@ export function ConfirmDialog({
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }
