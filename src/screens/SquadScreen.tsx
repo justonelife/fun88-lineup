@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
-import { motion } from 'motion/react'
+import { Suspense, lazy, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { Avatar } from '../components/ui/Avatar'
 import { OvrBadge } from '../components/ui/OvrBadge'
 import { Meter } from '../components/ui/Bars'
 import { Tappable } from '../components/ui/Tappable'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { PlayerSheet, type SheetAction } from '../components/PlayerSheet'
 import { SideToggle } from '../components/SideToggle'
 import { club } from '../data/clubs'
@@ -11,7 +12,14 @@ import { team, otherSide } from '../data/teams'
 import { lineOf } from '../lib/chemistry'
 import { bestSlotFor, weakestSlot } from '../lib/lineup'
 import { useSquad, BENCH_SIZE, XI_SIZE } from '../store/useSquad'
+import { toast } from '../store/useToast'
 import type { Line, Player } from '../types'
+
+/* The editor is a secondary surface with its own canvas/photo machinery — it
+ * loads the first time you open it, never on the app's critical path. */
+const PlayerEditor = lazy(() => import('../components/PlayerEditor'))
+
+type EditorTarget = { mode: 'create' } | { mode: 'edit'; id: string }
 
 type Filter = 'ALL' | Line
 type Sort = 'ovr' | 'name' | 'pos'
@@ -48,6 +56,7 @@ export function SquadScreen() {
   const assignToSlot = useSquad((s) => s.assignToSlot)
   const addToBench = useSquad((s) => s.addToBench)
   const removeFromBench = useSquad((s) => s.removeFromBench)
+  const deletePlayer = useSquad((s) => s.deletePlayer)
   const meta = team(activeSide)
   const rival = team(otherSide(activeSide))
 
@@ -55,6 +64,8 @@ export function SquadScreen() {
   const [filter, setFilter] = useState<Filter>('ALL')
   const [sort, setSort] = useState<Sort>('ovr')
   const [openId, setOpenId] = useState<string | null>(null)
+  const [editor, setEditor] = useState<EditorTarget | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   const inXI = useMemo(() => new Set(lineup.filter(Boolean) as string[]), [lineup])
   const onBench = useMemo(() => new Set(bench.filter(Boolean) as string[]), [bench])
@@ -112,9 +123,36 @@ export function SquadScreen() {
           setOpenId(null)
         },
       },
+      {
+        label: 'Edit player',
+        hint: 'name, position, attributes',
+        onTap: () => {
+          setOpenId(null)
+          setEditor({ mode: 'edit', id: p.id })
+        },
+      },
+      {
+        label: 'Delete player',
+        hint: 'removes from the database',
+        danger: true,
+        onTap: () => {
+          setOpenId(null)
+          setPendingDelete(p.id)
+        },
+      },
     ]
     return out
   }
+
+  const doomed = pendingDelete ? roster[pendingDelete] : undefined
+  const doomedPlaces = useMemo(() => {
+    if (!doomed) return ''
+    const where: string[] = []
+    if (inXI.has(doomed.id)) where.push(`the ${meta.label.toLowerCase()} seven`)
+    if (onBench.has(doomed.id)) where.push('the bench')
+    if (withRival.has(doomed.id)) where.push(`the ${rival.name} squad`)
+    return where.length ? ` He is currently in ${where.join(' and ')}; those slots are emptied.` : ''
+  }, [doomed, inXI, onBench, withRival, meta, rival])
 
   return (
     <div className="px-4 pb-6">
@@ -187,13 +225,25 @@ export function SquadScreen() {
           </span>
         </div>
 
-        <p className="text-2xs text-ink-faint">
-          {rows.length} players ·{' '}
-          <span style={{ color: meta.accent }}>
-            {inXI.size}/{XI_SIZE} starting
-          </span>{' '}
-          · {onBench.size}/{BENCH_SIZE} on the {meta.label.toLowerCase()} bench
-        </p>
+        {/* Von Restorff: the only saturated fill on the screen is the one thing
+            this list cannot do by itself — grow. */}
+        <div className="flex items-center gap-3">
+          <p className="min-w-0 flex-1 text-2xs text-ink-faint">
+            {rows.length} players ·{' '}
+            <span style={{ color: meta.accent }}>
+              {inXI.size}/{XI_SIZE} starting
+            </span>{' '}
+            · {onBench.size}/{BENCH_SIZE} on the {meta.label.toLowerCase()} bench
+          </p>
+          <Tappable
+            ariaLabel="Add player"
+            onTap={() => setEditor({ mode: 'create' })}
+            className="tap btn-primary flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2"
+          >
+            <span className="display text-base leading-none">+</span>
+            <span className="display text-2xs tracking-widest uppercase">Add player</span>
+          </Tappable>
+        </div>
       </div>
 
       {/* rows */}
@@ -284,6 +334,40 @@ export function SquadScreen() {
         }
         actions={open ? actionsFor(open) : []}
       />
+
+      <ConfirmDialog
+        open={Boolean(doomed)}
+        title={`Delete ${doomed?.name ?? 'player'}?`}
+        body={`He leaves the shared database for good and cannot be recovered — only "Reset everything" brings the original squad back.${doomedPlaces}`}
+        confirmLabel="Delete player"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const name = doomed?.name ?? 'Player'
+          if (pendingDelete) deletePlayer(pendingDelete)
+          setPendingDelete(null)
+          toast(`${name} deleted`, 'danger')
+        }}
+      />
+
+      <AnimatePresence>
+        {editor && (
+          <Suspense fallback={null}>
+            <PlayerEditor
+              key={editor.mode === 'edit' ? editor.id : 'create'}
+              mode={editor.mode}
+              player={editor.mode === 'edit' ? roster[editor.id] : undefined}
+              onClose={() => setEditor(null)}
+              onSaved={(id) => {
+                if (editor.mode === 'create') {
+                  setQuery('')
+                  setFilter('ALL')
+                  setOpenId(id)
+                }
+              }}
+            />
+          </Suspense>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

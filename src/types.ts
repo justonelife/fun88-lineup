@@ -59,6 +59,8 @@ export interface Player {
   /** 1-5 star weak foot / skill flourish, purely cosmetic. */
   skill: number
   form: number
+  /** Uploaded portrait as a 256px JPEG data URL. Beats the public/ drop-in. */
+  photo?: string
 }
 
 export interface Slot {

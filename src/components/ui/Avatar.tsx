@@ -6,8 +6,10 @@ import type { Player } from '../../types'
 /* Illustration style: flat, geometric, two-tone. Every avatar is the same
  * silhouette — a shoulders-up jersey block — so identity comes only from club
  * colour + initials. Generated locally, no network, scales to any size.
- * Real photos are opt-in: drop a file at public/players/<player.id>.jpg and
- * it's used automatically; otherwise this SVG is the permanent fallback. */
+ * Real photos are opt-in, in precedence order:
+ *   1. player.photo   — uploaded in the editor, a 256px JPEG data URL
+ *   2. /players/<player.id>.jpg — the public/ drop-in, no rebuild required
+ *   3. this SVG       — the permanent fallback, always available offline */
 
 interface Props {
   player: Player
@@ -71,10 +73,13 @@ function AvatarSvg({ player, size, className }: { player: Player; size: number; 
 }
 
 function AvatarImpl({ player, size = 40, className }: Props) {
-  const [photoFailed, setPhotoFailed] = useState(false)
+  // Failure is remembered per-source, so uploading a photo instantly recovers a
+  // player whose drop-in 404'd a moment ago — no effect, no stale flag.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
   const c = club(player.clubId)
+  const src = player.photo ?? `/players/${encodeURIComponent(player.id)}.jpg`
 
-  if (photoFailed) {
+  if (failedSrc === src) {
     return <AvatarSvg player={player} size={size} className={className} />
   }
 
@@ -84,12 +89,12 @@ function AvatarImpl({ player, size = 40, className }: Props) {
       style={{ display: 'inline-block', width: size, height: size, borderRadius: '9999px', overflow: 'hidden' }}
     >
       <img
-        src={`/players/${encodeURIComponent(player.id)}.jpg`}
+        src={src}
         alt={`${player.name}, ${c.name}`}
         width={size}
         height={size}
         style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-        onError={() => setPhotoFailed(true)}
+        onError={() => setFailedSrc(src)}
       />
     </span>
   )

@@ -104,7 +104,8 @@ export function PlayerSheet({
   note,
   actions,
 }: Props) {
-  const photoMissing = usePhotoMissing(player?.id ?? '')
+  // An uploaded portrait already wins in Avatar, so the drop-in hint is noise.
+  const photoMissing = usePhotoMissing(player?.id ?? '') && !player?.photo
   return (
     <Sheet open={open && Boolean(player)} onClose={onClose} label={player?.name}>
       {player && (

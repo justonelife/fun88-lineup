@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Header } from './components/Header'
 import { TabBar, type Tab } from './components/TabBar'
+import { Toaster } from './components/ui/Toaster'
 import { LineupScreen } from './screens/LineupScreen'
 import { TacticsScreen } from './screens/TacticsScreen'
 import { SquadScreen } from './screens/SquadScreen'
@@ -48,6 +49,7 @@ export default function App() {
       </main>
 
       <TabBar tab={tab} onTab={setTab} />
+      <Toaster />
     </div>
   )
 }

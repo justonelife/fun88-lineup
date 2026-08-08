@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import { AWAY_BENCH, AWAY_XI, DEFAULT_BENCH, DEFAULT_XI, PLAYERS } from '../data/players'
+import { toast } from './useToast'
 import { DEFAULT_TACTICS, PRESETS } from '../data/tactics'
 import { XI_SIZE } from '../data/formations'
 import { autoFit } from '../lib/lineup'
@@ -78,6 +79,10 @@ interface SquadState {
   activeSide: Side
   lastMatch: MatchResult | null
 
+  addPlayer: (player: Player) => void
+  updatePlayer: (id: string, patch: Partial<Omit<Player, 'id'>>) => void
+  /** Removes from the pool and detaches from both teams in one transaction. */
+  deletePlayer: (id: string) => void
   setActiveSide: (side: Side) => void
   setFormation: (side: Side, id: string) => void
   swapSlots: (side: Side, a: number, b: number) => void
@@ -110,6 +115,30 @@ const patch =
   (s: SquadState): Partial<SquadState> => ({ [side]: { ...s[side], ...fn(s[side]) } }) as
     Partial<SquadState>
 
+/* A 256px portrait is 10-40KB of base64 per player; a big enough custom squad
+ * can still walk into the ~5MB localStorage ceiling. The write is best-effort:
+ * the session keeps working in memory and the user is told once, rather than the
+ * whole app dying inside a setState. */
+let quotaWarned = false
+const quotaSafeStorage = createJSONStorage(() => ({
+  getItem: (name: string) => localStorage.getItem(name),
+  setItem: (name: string, value: string) => {
+    try {
+      localStorage.setItem(name, value)
+      quotaWarned = false
+    } catch {
+      if (!quotaWarned) {
+        quotaWarned = true
+        toast(
+          'Storage is full — changes stay for this session only. Remove a photo to free space.',
+          'warn',
+        )
+      }
+    }
+  },
+  removeItem: (name: string) => localStorage.removeItem(name),
+}))
+
 export const useSquad = create<SquadState>()(
   persist(
     (set) => ({
@@ -118,6 +147,33 @@ export const useSquad = create<SquadState>()(
       away: defaultAway(),
       activeSide: 'home',
       lastMatch: null,
+
+      addPlayer: (player) => set((s) => ({ roster: { ...s.roster, [player.id]: player } })),
+
+      updatePlayer: (id, patch) =>
+        set((s) => {
+          const current = s.roster[id]
+          if (!current) return {}
+          // `id` is deliberately not patchable: it keys the photo drop-in and
+          // every lineup/bench reference held by both teams.
+          return { roster: { ...s.roster, [id]: { ...current, ...patch, id } } }
+        }),
+
+      deletePlayer: (id) =>
+        set((s) => {
+          if (!s.roster[id]) return {}
+          const roster = { ...s.roster }
+          delete roster[id]
+          // A deleted player leaves no ghost shirt behind: the slot empties and
+          // its hand-placed coordinate goes with it.
+          const strip = (t: TeamSlice): TeamSlice => ({
+            ...t,
+            lineup: t.lineup.map((x) => (x === id ? null : x)),
+            positions: t.positions.map((p, i) => (t.lineup[i] === id ? null : p)),
+            bench: t.bench.map((x) => (x === id ? null : x)),
+          })
+          return { roster, home: strip(s.home), away: strip(s.away) }
+        }),
 
       setActiveSide: (side) => set({ activeSide: side }),
 
@@ -285,6 +341,7 @@ export const useSquad = create<SquadState>()(
     {
       name: 'ultra-xi:squad',
       version: 2,
+      storage: quotaSafeStorage,
       partialize: (s) => ({
         roster: s.roster,
         home: s.home,
@@ -295,11 +352,14 @@ export const useSquad = create<SquadState>()(
       migrate: (persisted, version) => migrate(persisted, version),
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<SquadState>
-        // Fold any newly-added players into a previously stored roster so the
-        // database can grow without wiping a saved squad.
+        // Fold any newly-added seeds into a previously stored roster so the
+        // shipped database can grow without wiping a saved squad — and keep
+        // every player the user created, whose id is in no seed list at all.
         const roster: Roster = { ...baseRoster() }
         for (const [id, p] of Object.entries(saved.roster ?? {})) {
-          if (roster[id]) roster[id] = { ...roster[id], ...(p as Player) }
+          const base = roster[id]
+          if (base) roster[id] = { ...base, ...(p as Player) }
+          else if (isPlayerish(p)) roster[id] = { ...(p as Player), id }
         }
         return {
           ...current,
@@ -312,6 +372,22 @@ export const useSquad = create<SquadState>()(
     },
   ),
 )
+
+/** A stored id that matches no seed is a user-created player. Accept it only if
+ *  the payload still looks like a Player — a hand-mangled localStorage entry
+ *  must not reach the pitch as `undefined.stats`. */
+function isPlayerish(p: unknown): p is Player {
+  if (!p || typeof p !== 'object') return false
+  const c = p as Partial<Player>
+  return (
+    typeof c.name === 'string' &&
+    typeof c.pos === 'string' &&
+    typeof c.ovr === 'number' &&
+    typeof c.clubId === 'string' &&
+    Boolean(c.stats) &&
+    typeof c.stats?.pac === 'number'
+  )
+}
 
 /** Defend against a half-written or hand-edited payload: every team slice that
  *  reaches the app has exactly seven slots, seven bench seats and no subFlash. */

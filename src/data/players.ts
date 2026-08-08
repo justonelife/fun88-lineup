@@ -120,14 +120,27 @@ const SEEDS: Seed[] = [
   { n: 'Dylan Prescott', p: 'ST', o: 76, c: 'kestrel', nat: 'England', sk: 2 },
 ]
 
-function slug(name: string, i: number): string {
+/** Canonical id shape: `<latin-slug>-<index>`. Also the key for the optional
+ *  photo drop-in at public/players/<id>.jpg, which is why an id never changes
+ *  once it has been handed out. */
+export function slug(name: string, i: number): string {
   const base = name
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z]+/g, '-')
     .replace(/^-|-$/g, '')
-  return `${base}-${i}`
+  return `${base || 'player'}-${i}`
+}
+
+/** First free `slug(name, i)`, scanning from 0. Collides with nothing already
+ *  in the roster \u2014 including seeds a user has since edited or renamed. */
+export function nextPlayerId(taken: (id: string) => boolean, name: string): string {
+  for (let i = 0; i < 5000; i++) {
+    const id = slug(name, i)
+    if (!taken(id)) return id
+  }
+  return slug(name, Math.floor(Math.random() * 1e9))
 }
 
 export const PLAYERS: Player[] = SEEDS.map((s, i) => {
