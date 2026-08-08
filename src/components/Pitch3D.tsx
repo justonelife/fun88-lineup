@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { motion, type PanInfo } from 'motion/react'
+import { animate, motion, useMotionValue } from 'motion/react'
 import { PlayerToken, TOKEN_RATIO } from './PlayerToken'
 import { LINK_COLOR, resolve } from '../lib/chemistry'
 import {
@@ -21,7 +21,14 @@ import type { Vec } from '../types'
 import type { PitchMode } from './Pitch'
 
 const LONG_PRESS_MS = 380
+const DRAG_THRESHOLD_PX = 4
 const SPRING = { type: 'spring', stiffness: 220, damping: 25, mass: 0.7 } as const
+
+/** How far a card has been dragged from where the finger went down, in screen px. */
+interface Delta {
+  x: number
+  y: number
+}
 
 interface Props {
   team: TeamDerived
@@ -186,12 +193,12 @@ interface CardProps {
   hovered: boolean
   flashing: boolean
   dragging: boolean
-  stageRef: React.RefObject<HTMLDivElement | null>
   onTap: (slot: number) => void
   onLongPress: (slot: number) => void
   onDragStart: (slot: number) => void
-  onDragMove: (slot: number, info: PanInfo) => void
-  onDragEnd: (slot: number, info: PanInfo) => void
+  onDragMove: (slot: number, at: Delta) => void
+  onDragEnd: (slot: number, at: Delta) => void
+  onDragCancel: () => void
 }
 
 function PitchCard({
@@ -204,16 +211,23 @@ function PitchCard({
   hovered,
   flashing,
   dragging,
-  stageRef,
   onTap,
   onLongPress,
   onDragStart,
   onDragMove,
   onDragEnd,
+  onDragCancel,
 }: CardProps) {
   const pressTimer = useRef<number | null>(null)
   const longFired = useRef(false)
-  const dragged = useRef(false)
+  const isDragging = useRef(false)
+  const pointerOrigin = useRef<{ x: number; y: number } | null>(null)
+  /* The live drag delta rides its own MotionValues on an inner wrapper rather
+   * than React state, so a 120Hz finger doesn't re-render seven player cards a
+   * frame — and it composes with the anchor spring on the parent instead of
+   * fighting it for the same `transform`. */
+  const dragX = useMotionValue(0)
+  const dragY = useMotionValue(0)
 
   const slot = team.formation.slots[index]
   const player = resolve(team.roster, team.lineup[index])
@@ -233,6 +247,32 @@ function PitchCard({
     }
   }
 
+  const baseX = centre.x + anchor.x
+  const baseY = centre.y + anchor.y
+
+  /** Keep the ground anchor on the grass, whatever the finger does. */
+  const onStage = (d: number, base: number, span: number) =>
+    Math.min(Math.max(base + d, 0), span) - base
+
+  /** Spring the delta out on the same curve the anchor springs in on. The two
+   *  then cancel frame for frame, so a dropped card sits still at the drop
+   *  point instead of rubber-banding home and flying back out. */
+  const settle = () => {
+    animate(dragX, 0, SPRING)
+    animate(dragY, 0, SPRING)
+  }
+
+  const endGesture = (e: React.PointerEvent<HTMLDivElement>) => {
+    clearTimer()
+    pointerOrigin.current = null
+    const was = isDragging.current
+    isDragging.current = false
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+    return was
+  }
+
   if (!slot) return null
 
   return (
@@ -247,76 +287,110 @@ function PitchCard({
         zIndex: dragging ? 1200 : isSwapSource ? 1100 : 500 + Math.round(anchor.y),
       }}
       initial={false}
-      animate={{ x: centre.x + anchor.x, y: centre.y + anchor.y }}
+      animate={{ x: baseX, y: baseY }}
       transition={SPRING}
-      drag
-      dragSnapToOrigin
-      dragMomentum={false}
-      dragElastic={0.06}
-      dragConstraints={stageRef}
-      onDragStart={() => {
-        dragged.current = true
-        clearTimer()
-        onDragStart(index)
-      }}
-      onDrag={(_, info) => onDragMove(index, info)}
-      onDragEnd={(_, info) => {
-        dragged.current = false
-        onDragEnd(index, info)
-      }}
-      onPointerDown={() => {
+      onPointerDown={(e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return
         longFired.current = false
-        dragged.current = false
+        isDragging.current = false
+        pointerOrigin.current = { x: e.clientX, y: e.clientY }
+        // The anchor this sits on is a 0x0 point and the card is barely 50px
+        // wide, so a finger leaves it almost immediately. Capturing the pointer
+        // is what keeps the rest of the gesture — every move, and the release —
+        // addressed to this card instead of to whatever it flew over.
+        e.currentTarget.setPointerCapture(e.pointerId)
         pressTimer.current = window.setTimeout(() => {
           longFired.current = true
           navigator.vibrate?.(14)
           onLongPress(index)
         }, LONG_PRESS_MS)
       }}
-      onPointerUp={() => {
-        clearTimer()
-        if (longFired.current || dragged.current) return
+      onPointerMove={(e) => {
+        const from = pointerOrigin.current
+        if (!from) return
+        const dx = e.clientX - from.x
+        const dy = e.clientY - from.y
+        if (!isDragging.current) {
+          // A motionless tap moves nothing: no transform is ever touched, so
+          // there is nothing to unwind on release. This is the whole reason the
+          // drag is hand-rolled — framer's `dragSnapToOrigin` unwinds the
+          // transform of any pan it started, and because these cards are
+          // positioned *by* that transform, unwinding it on a tap parked the
+          // card at the stage's literal top-left corner.
+          if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
+          isDragging.current = true
+          clearTimer()
+          onDragStart(index)
+        }
+        const at = {
+          x: onStage(dx, baseX, centre.x * 2),
+          y: onStage(dy, baseY, centre.y * 2),
+        }
+        dragX.set(at.x)
+        dragY.set(at.y)
+        onDragMove(index, at)
+      }}
+      onPointerUp={(e) => {
+        const at = { x: dragX.get(), y: dragY.get() }
+        if (endGesture(e)) {
+          settle()
+          onDragEnd(index, at)
+          return
+        }
+        if (longFired.current) return
         onTap(index)
       }}
-      onPointerCancel={clearTimer}
+      onPointerCancel={(e) => {
+        if (endGesture(e)) {
+          settle()
+          onDragCancel()
+        }
+      }}
     >
-      {/* the card's footprint on the grass — sells the float */}
-      <span
-        className="pointer-events-none absolute"
-        style={{
-          left: -shadowW / 2,
-          top: -shadowH / 2,
-          width: shadowW,
-          height: shadowH,
-          borderRadius: '50%',
-          background: 'radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.6), transparent 72%)',
-        }}
-        aria-hidden
-      />
-      {/* billboard: upright, planted on the anchor, scaled by depth */}
-      <div
-        style={{
-          position: 'absolute',
-          left: -cardW / 2,
-          bottom: lift,
-          width: cardW,
-          height: cardH,
-          transformOrigin: '50% 100%',
-          transform: `scale(${sc})`,
-        }}
+      {/* everything below rides the live drag delta; the parent carries the
+          anchor spring, so the two never fight over one transform */}
+      <motion.div
+        className="absolute top-0 left-0"
+        style={{ width: 0, height: 0, x: dragX, y: dragY }}
       >
-        <PlayerToken
-          player={player}
-          slotPos={slot.pos}
-          fit={team.chem.fits[index] ?? 0}
-          chem={player ? team.chem.perSlot[index] : undefined}
-          width={cardW}
-          accent={team.meta.accent}
-          swapping={isSwapSource}
-          targeting={isTargetable || hovered}
-          flash={flashing}
+        {/* the card's footprint on the grass — sells the float */}
+        <span
+          className="pointer-events-none absolute"
+          style={{
+            left: -shadowW / 2,
+            top: -shadowH / 2,
+            width: shadowW,
+            height: shadowH,
+            borderRadius: '50%',
+            background: 'radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.6), transparent 72%)',
+          }}
+          aria-hidden
         />
-      </div>
+        {/* billboard: upright, planted on the anchor, scaled by depth */}
+        <div
+          style={{
+            position: 'absolute',
+            left: -cardW / 2,
+            bottom: lift,
+            width: cardW,
+            height: cardH,
+            transformOrigin: '50% 100%',
+            transform: `scale(${sc})`,
+          }}
+        >
+          <PlayerToken
+            player={player}
+            slotPos={slot.pos}
+            fit={team.chem.fits[index] ?? 0}
+            chem={player ? team.chem.perSlot[index] : undefined}
+            width={cardW}
+            accent={team.meta.accent}
+            swapping={isSwapSource}
+            targeting={isTargetable || hovered}
+            flash={flashing}
+          />
+        </div>
+      </motion.div>
     </motion.div>
   )
 }
@@ -374,10 +448,10 @@ export function Pitch3D({
   const cardW = Math.round(Math.max(46, Math.min(80, box.w * 0.115)))
 
   /** Where a dragged card's ground anchor has ended up, in screen offsets. */
-  const dropPoint = (slot: number, info: PanInfo) => {
+  const dropPoint = (slot: number, at: Delta) => {
     const a = anchors[slot]
     if (!a) return null
-    return { x: a.x + info.offset.x, y: a.y + info.offset.y }
+    return { x: a.x + at.x, y: a.y + at.y }
   }
 
   /** Nearest other anchor to a drop point, or null for open grass. The tolerance
@@ -398,16 +472,21 @@ export function Pitch3D({
     return best
   }
 
-  const onDragMove = (slot: number, info: PanInfo) => {
-    const at = dropPoint(slot, info)
-    const hit = at ? slotUnder(slot, at) : null
+  const onDragMove = (slot: number, delta: Delta) => {
+    const to = dropPoint(slot, delta)
+    const hit = to ? slotUnder(slot, to) : null
     setHoverSlot((prev) => (prev === hit ? prev : hit))
   }
 
-  const onDragEnd = (slot: number, info: PanInfo) => {
+  const onDragCancel = () => {
     setHoverSlot(null)
     setDragSlot(null)
-    const at = dropPoint(slot, info)
+  }
+
+  const onDragEnd = (slot: number, delta: Delta) => {
+    setHoverSlot(null)
+    setDragSlot(null)
+    const at = dropPoint(slot, delta)
     if (!at) return
     navigator.vibrate?.(14)
     const hit = slotUnder(slot, at)
@@ -483,12 +562,12 @@ export function Pitch3D({
                 hovered={hoverSlot === i}
                 flashing={flashSlot === i}
                 dragging={dragSlot === i}
-                stageRef={stageRef}
                 onTap={onTapSlot}
                 onLongPress={onLongPressSlot}
                 onDragStart={setDragSlot}
                 onDragMove={onDragMove}
                 onDragEnd={onDragEnd}
+                onDragCancel={onDragCancel}
               />
             )
           })}
