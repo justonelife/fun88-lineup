@@ -2,6 +2,16 @@
   command = "npm run build"
   publish = "dist"
 
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Declared BEFORE the SPA catch-all — see plans/database.md §4.3.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/state"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

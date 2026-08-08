@@ -70,7 +70,7 @@ function makeTeam(
 const defaultHome = () => makeTeam(DEFAULT_XI, DEFAULT_BENCH, DEFAULT_FORMATION, DEFAULT_TACTICS)
 const defaultAway = () => makeTeam(AWAY_XI, AWAY_BENCH, DEFAULT_FORMATION, AWAY_TACTICS)
 
-interface SquadState {
+export interface SquadState {
   /** Shared player pool — one database, two teams drawing from it. */
   roster: Roster
   home: TeamSlice
@@ -138,6 +138,10 @@ const quotaSafeStorage = createJSONStorage(() => ({
   },
   removeItem: (name: string) => localStorage.removeItem(name),
 }))
+
+/** Exactly what `partialize` ships — the one shape shared by localStorage,
+ *  file export/import and the cloud envelope. */
+export type PersistedSquad = Pick<SquadState, 'roster' | 'home' | 'away' | 'activeSide' | 'lastMatch'>
 
 export const useSquad = create<SquadState>()(
   persist(
@@ -340,7 +344,7 @@ export const useSquad = create<SquadState>()(
     }),
     {
       name: 'ultra-xi:squad',
-      version: 2,
+      version: 3,
       storage: quotaSafeStorage,
       partialize: (s) => ({
         roster: s.roster,
@@ -350,28 +354,35 @@ export const useSquad = create<SquadState>()(
         lastMatch: s.lastMatch,
       }),
       migrate: (persisted, version) => migrate(persisted, version),
-      merge: (persisted, current) => {
-        const saved = (persisted ?? {}) as Partial<SquadState>
-        // Fold any newly-added seeds into a previously stored roster so the
-        // shipped database can grow without wiping a saved squad — and keep
-        // every player the user created, whose id is in no seed list at all.
-        const roster: Roster = { ...baseRoster() }
-        for (const [id, p] of Object.entries(saved.roster ?? {})) {
-          const base = roster[id]
-          if (base) roster[id] = { ...base, ...(p as Player) }
-          else if (isPlayerish(p)) roster[id] = { ...(p as Player), id }
-        }
-        return {
-          ...current,
-          ...saved,
-          roster,
-          home: normaliseTeam(saved.home, defaultHome()),
-          away: normaliseTeam(saved.away, defaultAway()),
-        }
-      },
+      merge: (persisted, current) => foldPersisted(persisted as Partial<SquadState>, current),
     },
   ),
 )
+
+/** Folds a saved/imported/cloud payload onto a live store snapshot — the one
+ *  code path shared by persist rehydration, JSON import and cloud adopt. Fold
+ *  newly-added seeds into a previously stored roster so the shipped database
+ *  can grow without wiping a saved squad — and keep every player the user
+ *  created, whose id is in no seed list at all. */
+export function foldPersisted(
+  persisted: Partial<SquadState> | null | undefined,
+  current: SquadState,
+): SquadState {
+  const saved = persisted ?? {}
+  const roster: Roster = { ...baseRoster() }
+  for (const [id, p] of Object.entries(saved.roster ?? {})) {
+    const base = roster[id]
+    if (base) roster[id] = { ...base, ...(p as Player) }
+    else if (isPlayerish(p)) roster[id] = { ...(p as Player), id }
+  }
+  return {
+    ...current,
+    ...saved,
+    roster,
+    home: normaliseTeam(saved.home, defaultHome()),
+    away: normaliseTeam(saved.away, defaultAway()),
+  }
+}
 
 /** A stored id that matches no seed is a user-created player. Accept it only if
  *  the payload still looks like a Player — a hand-mangled localStorage entry
@@ -421,7 +432,7 @@ interface LegacyState {
   lastMatch?: MatchResult | null
 }
 
-function migrate(persisted: unknown, version: number): SquadState {
+export function migrate(persisted: unknown, version: number): SquadState {
   const state = persisted as Partial<SquadState> & LegacyState
   if (version >= 2) return state as SquadState
 
