@@ -1,11 +1,13 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { club } from '../../data/clubs'
 import { initials } from '../../lib/lineup'
 import type { Player } from '../../types'
 
 /* Illustration style: flat, geometric, two-tone. Every avatar is the same
  * silhouette — a shoulders-up jersey block — so identity comes only from club
- * colour + initials. Generated locally, no network, scales to any size. */
+ * colour + initials. Generated locally, no network, scales to any size.
+ * Real photos are opt-in: drop a file at public/players/<player.id>.jpg and
+ * it's used automatically; otherwise this SVG is the permanent fallback. */
 
 interface Props {
   player: Player
@@ -13,7 +15,7 @@ interface Props {
   className?: string
 }
 
-function AvatarImpl({ player, size = 40, className }: Props) {
+function AvatarSvg({ player, size, className }: { player: Player; size: number; className?: string }) {
   const c = club(player.clubId)
   const gid = `av-${player.id}`
 
@@ -65,6 +67,31 @@ function AvatarImpl({ player, size = 40, className }: Props) {
 
       <circle cx="32" cy="32" r="30.5" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1.4" />
     </svg>
+  )
+}
+
+function AvatarImpl({ player, size = 40, className }: Props) {
+  const [photoFailed, setPhotoFailed] = useState(false)
+  const c = club(player.clubId)
+
+  if (photoFailed) {
+    return <AvatarSvg player={player} size={size} className={className} />
+  }
+
+  return (
+    <span
+      className={className}
+      style={{ display: 'inline-block', width: size, height: size, borderRadius: '9999px', overflow: 'hidden' }}
+    >
+      <img
+        src={`/players/${encodeURIComponent(player.id)}.jpg`}
+        alt={`${player.name}, ${c.name}`}
+        width={size}
+        height={size}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        onError={() => setPhotoFailed(true)}
+      />
+    </span>
   )
 }
 

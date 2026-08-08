@@ -83,6 +83,21 @@ Overrides are keyed **by slot index**, and the rules are deliberately boring:
 | Empty a slot (to bench) | That slot's override is cleared, so the empty marker returns to the shape default |
 | Reset positions | Clears every override for that side |
 
+## Player photos
+
+Every card falls back to a generated SVG avatar (club colours + initials), but you can drop
+in real photos of your team:
+
+1. Pick a photo from your team album.
+2. Save it into `public/players/` as `<player-id>.jpg` — e.g. `ivan-petrescu-0.jpg`. Player
+   ids are `slug-of-the-name-<index>`; find the exact id for anyone in `src/data/players.ts`
+   (or open their sheet — it shows the hint with the exact filename when a photo is missing).
+3. Refresh — Vite serves anything in `public/` as-is and hot-reloads it. Delete the file to
+   go back to the generated avatar.
+
+Square-ish JPGs look best (cards clip to a circle), but any size works — smaller loads
+faster.
+
 ## Stack
 
 | | |

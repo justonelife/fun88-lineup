@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 import { Sheet } from './ui/Sheet'
 import { Avatar } from './ui/Avatar'
@@ -66,6 +67,21 @@ function Fact({ label, value, tone }: { label: string; value: string; tone?: str
   )
 }
 
+/** Probes whether a real photo exists for this player, purely for the "add a photo" hint. */
+function usePhotoMissing(playerId: string): boolean {
+  const [missing, setMissing] = useState(false)
+  useEffect(() => {
+    setMissing(false)
+    const img = new Image()
+    img.onerror = () => setMissing(true)
+    img.src = `/players/${encodeURIComponent(playerId)}.jpg`
+    return () => {
+      img.onerror = null
+    }
+  }, [playerId])
+  return missing
+}
+
 const MEMBERSHIP_LABEL = {
   xi: 'Starting seven',
   bench: 'On the bench',
@@ -88,6 +104,7 @@ export function PlayerSheet({
   note,
   actions,
 }: Props) {
+  const photoMissing = usePhotoMissing(player?.id ?? '')
   return (
     <Sheet open={open && Boolean(player)} onClose={onClose} label={player?.name}>
       {player && (
@@ -100,6 +117,11 @@ export function PlayerSheet({
               <p className="truncate text-xs text-ink-muted">
                 {club(player.clubId).name} · {player.nation}
               </p>
+              {photoMissing && (
+                <p className="truncate text-2xs text-ink-faint">
+                  Thêm ảnh: lưu public/players/{player.id}.jpg
+                </p>
+              )}
               <div className="mt-1.5 flex flex-wrap items-center gap-1">
                 <span className="display rounded bg-lime-500/15 px-1.5 text-2xs tracking-wider text-lime-200 uppercase ring-1 ring-lime-500/35">
                   {player.pos}
