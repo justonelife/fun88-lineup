@@ -1,6 +1,6 @@
 import { migrate as migrateSquadState, useSquad, type PersistedSquad } from '../store/useSquad'
 import { toast } from '../store/useToast'
-import { readFile, readIndex, type VersionMeta } from './versionStore'
+import { isCloudVersion, readFile, readIndex, type VersionMeta } from './versionStore'
 
 /** Cloud envelope + file-export version. v4 added the version set (`versions`,
  *  `activeVersionId`, `files`); v3 and older carry a single squad in `state`
@@ -44,19 +44,44 @@ export function makeEnvelope(state: PersistedSquad, updatedAt?: number): SquadEn
 
 /** The whole version set in one envelope: live state as the active version,
  *  every other version read back from its file. This is what gets pushed to
- *  the cloud and what "Export all" writes. */
+ *  the cloud and what "Export all" writes. Temporary (local-only) versions
+ *  never leave the device — they are filtered out entirely, and if the
+ *  version open on THIS device is temporary, the newest synced version
+ *  stands in as the envelope's active version instead. */
 export function buildEnvelope(device?: string): SquadEnvelope {
-  const state = currentPersisted()
+  const now = Date.now()
+  const base: SquadEnvelope = { v: ENVELOPE_VERSION, app: APP_ID, updatedAt: now, device, state: currentPersisted() }
   const index = readIndex()
-  const base: SquadEnvelope = { v: ENVELOPE_VERSION, app: APP_ID, updatedAt: Date.now(), device, state }
   if (!index) return base
+
+  const cloudVersions = index.versions.filter(isCloudVersion)
+  if (!cloudVersions.length) return base
+
+  const localActiveIsCloud = cloudVersions.some((m) => m.id === index.activeVersionId)
+  const activeMeta = localActiveIsCloud
+    ? cloudVersions.find((m) => m.id === index.activeVersionId)!
+    : cloudVersions.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
+
+  const activeState = activeMeta.id === index.activeVersionId ? currentPersisted() : readFile(activeMeta.id)?.state
+  if (!activeState) return base
+
   const files: Record<string, PersistedSquad> = {}
-  for (const meta of index.versions) {
-    if (meta.id === index.activeVersionId) continue
+  for (const meta of cloudVersions) {
+    if (meta.id === activeMeta.id) continue
     const file = readFile(meta.id)
     if (file) files[meta.id] = file.state
   }
-  return { ...base, activeVersionId: index.activeVersionId, versions: index.versions, files }
+
+  return {
+    v: ENVELOPE_VERSION,
+    app: APP_ID,
+    updatedAt: now,
+    device,
+    state: activeState,
+    activeVersionId: activeMeta.id,
+    versions: cloudVersions,
+    files,
+  }
 }
 
 /** Resolves one squad payload against the client's known schema version —

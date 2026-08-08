@@ -14,6 +14,8 @@ import {
 } from '../lib/squadFile'
 import {
   deleteFile,
+  isCloudVersion,
+  MAX_CLOUD_VERSIONS,
   newVersionId,
   readFile,
   readIndex,
@@ -46,6 +48,18 @@ interface VersionsState {
   /** Debounced write of the live squad into the active version's file. */
   markDirty: () => void
   flushActive: () => void
+}
+
+/** Promotes the newest temporary version to `cloud: true` if a cloud slot is
+ *  free, so deleting a synced version backfills the cap from local-only ones. */
+function promoteTemporary(versions: VersionMeta[]): VersionMeta[] {
+  const cloudCount = versions.filter(isCloudVersion).length
+  if (cloudCount >= MAX_CLOUD_VERSIONS) return versions
+  const temps = versions.filter((v) => !isCloudVersion(v))
+  if (!temps.length) return versions
+  const winner = temps.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
+  toast(`Version ${winner.name} is now in the cloud.`, 'ok')
+  return versions.map((v) => (v.id === winner.id ? { ...v, cloud: true } : v))
 }
 
 function uniqueName(want: string, taken: Set<string>): string {
@@ -132,9 +146,18 @@ export const useVersions = create<VersionsState>()((set, get) => {
       const id = newVersionId()
       const now = Date.now()
       const label = uniqueName(name?.trim() || get().nextName(), new Set(versions.map((v) => v.name)))
+      const cloudCount = versions.filter(isCloudVersion).length
+      const cloud = cloudCount < MAX_CLOUD_VERSIONS
       writeFile(id, makeEnvelope(currentPersisted(), now))
-      commit({ activeVersionId: id, versions: [{ id, name: label, updatedAt: now }, ...versions] })
-      toast(`"${label}" created.`, 'ok')
+      commit({ activeVersionId: id, versions: [{ id, name: label, updatedAt: now, cloud }, ...versions] })
+      if (cloud) {
+        toast(`"${label}" created.`, 'ok')
+      } else {
+        toast(
+          `Cloud limit reached (${MAX_CLOUD_VERSIONS}) — this version is temporary and stays on this device. Export/import to share it.`,
+          'danger',
+        )
+      }
     },
 
     selectVersion: (id) => {
@@ -173,8 +196,12 @@ export const useVersions = create<VersionsState>()((set, get) => {
       const remaining = versions.filter((v) => v.id !== id)
       deleteFile(id)
 
+      // Freed cloud slot: the newest temporary version claims it, so the cap
+      // never sits under 10 while a local-only version is waiting.
+      const promoted = promoteTemporary(remaining)
+
       if (id !== activeVersionId) {
-        commit({ activeVersionId, versions: remaining })
+        commit({ activeVersionId, versions: promoted })
         return
       }
       cancel()
@@ -185,15 +212,15 @@ export const useVersions = create<VersionsState>()((set, get) => {
         const fresh = newVersionId()
         const now = Date.now()
         writeFile(fresh, makeEnvelope(currentPersisted(), now))
-        commit({ activeVersionId: fresh, versions: [{ id: fresh, name: 'Version 1', updatedAt: now }] })
+        commit({ activeVersionId: fresh, versions: [{ id: fresh, name: 'Version 1', updatedAt: now, cloud: true }] })
         cancel()
         toast('All versions deleted — started a fresh Version 1.', 'warn')
         return
       }
 
-      const next = remaining.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
+      const next = promoted.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a))
       const file = readFile(next.id)
-      commit({ activeVersionId: next.id, versions: remaining })
+      commit({ activeVersionId: next.id, versions: promoted })
       const state = file ? resolveState(file.v, file.state) : null
       if (state && state !== 'too-new') load(state)
       toast(`Switched to "${next.name}".`, 'ok')

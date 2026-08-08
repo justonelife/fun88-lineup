@@ -8,7 +8,7 @@ import { useActiveVersionName, useVersions } from '../store/useVersions'
 import { formatCodeGrouped } from '../lib/cloud'
 import { exportSquad } from '../lib/squadFile'
 import { toast } from '../store/useToast'
-import type { VersionMeta } from '../lib/versionStore'
+import { isCloudVersion, MAX_CLOUD_VERSIONS, type VersionMeta } from '../lib/versionStore'
 
 interface Props {
   open: boolean
@@ -169,7 +169,17 @@ function VersionRow({ v, active, onDelete }: { v: VersionMeta; active: boolean; 
               {active && <span className="size-2 rounded-full bg-gold-400" />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="display block truncate text-sm text-ink">{v.name}</span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="display block truncate text-sm text-ink">{v.name}</span>
+                {!isCloudVersion(v) && (
+                  <span
+                    className="label-micro shrink-0 rounded-full px-1.5 py-0.5"
+                    style={{ background: 'var(--color-surface-4)', color: 'var(--color-ink-faint)' }}
+                  >
+                    TEMP · local only
+                  </span>
+                )}
+              </span>
               <span className="block text-2xs text-ink-faint">
                 {active ? 'Open now' : `Saved ${timeAgo(v.updatedAt)}`}
               </span>
@@ -585,6 +595,13 @@ export function VersionsSheet({ open, onClose }: Props) {
             </div>
             <p className="text-2xs text-ink-faint">Copies the squad you have open right now.</p>
           </div>
+        )}
+
+        {versions.filter(isCloudVersion).length >= MAX_CLOUD_VERSIONS && (
+          <p className="measure mt-3 text-2xs text-ink-faint">
+            Cloud keeps up to {MAX_CLOUD_VERSIONS} versions — extra versions stay on this device. Export/import to
+            share them.
+          </p>
         )}
 
         <div className="mt-3" role="listbox" aria-label="Saved versions">

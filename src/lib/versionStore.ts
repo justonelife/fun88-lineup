@@ -15,11 +15,17 @@ export const FILE_PREFIX = 'fun88:version:'
 
 export const fileKey = (id: string) => `${FILE_PREFIX}${id}`
 
+/** Cloud keeps at most this many versions — the rest are temporary/local-only. */
+export const MAX_CLOUD_VERSIONS = 10
+
 export interface VersionMeta {
   id: string
   name: string
   updatedAt: number
   note?: string
+  /** `false` = temporary: local-only, never pushed to the cloud. Missing (old
+   *  data written before this flag existed) means `true`. */
+  cloud?: boolean
 }
 
 export interface VersionsIndex {
@@ -67,6 +73,9 @@ function isMeta(v: unknown): v is VersionMeta {
   const m = v as Partial<VersionMeta>
   return typeof m.id === 'string' && typeof m.name === 'string' && typeof m.updatedAt === 'number'
 }
+
+/** Missing flag (data from before this feature) reads as synced. */
+export const isCloudVersion = (m: VersionMeta): boolean => m.cloud !== false
 
 /** Reads the index, repairing anything a hand-edit or half-write could break:
  *  junk entries are dropped and a dangling `activeVersionId` falls back to the
