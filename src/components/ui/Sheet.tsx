@@ -1,5 +1,8 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
+
+/** Ignore scrim pointerdowns this soon after mount — covers synthesized click/pointer timing on touch browsers. */
+const SCRIM_GUARD_MS = 250
 
 interface Props {
   open: boolean
@@ -15,8 +18,11 @@ interface Props {
  * so its contents read as one task context.
  */
 export function Sheet({ open, onClose, children, label }: Props) {
+  const openedAt = useRef(0)
+
   useEffect(() => {
     if (!open) return
+    openedAt.current = performance.now()
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
@@ -39,7 +45,10 @@ export function Sheet({ open, onClose, children, label }: Props) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            onClick={onClose}
+            onPointerDown={() => {
+              if (performance.now() - openedAt.current < SCRIM_GUARD_MS) return
+              onClose()
+            }}
           />
           <motion.div
             role="dialog"

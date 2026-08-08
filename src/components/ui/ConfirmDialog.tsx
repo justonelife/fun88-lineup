@@ -1,6 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Tappable } from './Tappable'
+
+/** Ignore scrim pointerdowns this soon after mount — covers synthesized click/pointer timing on touch browsers. */
+const SCRIM_GUARD_MS = 250
 
 interface Props {
   open: boolean
@@ -26,8 +29,11 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: Props) {
+  const openedAt = useRef(0)
+
   useEffect(() => {
     if (!open) return
+    openedAt.current = performance.now()
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel()
     }
@@ -46,7 +52,10 @@ export function ConfirmDialog({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16 }}
-            onClick={onCancel}
+            onPointerDown={() => {
+              if (performance.now() - openedAt.current < SCRIM_GUARD_MS) return
+              onCancel()
+            }}
           />
           <motion.div
             role="alertdialog"
