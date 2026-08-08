@@ -4,6 +4,7 @@ import { Meter } from './ui/Bars'
 import { Tappable } from './ui/Tappable'
 import { resolve } from '../lib/chemistry'
 import { shortName, staminaTone } from '../lib/lineup'
+import { team } from '../data/teams'
 import { useSquad } from '../store/useSquad'
 import type { PitchMode } from './Pitch'
 
@@ -12,18 +13,22 @@ interface Props {
   onSelectBench: (index: number) => void
 }
 
-/** Bench rail. Common region: one bordered strip holds all substitutes, so the
- *  eye never confuses a bench card with a pitch token. */
+/** Bench rail for the active side. Common region: one bordered strip holds all
+ *  substitutes, so the eye never confuses a bench card with a pitch token. */
 export function BenchStrip({ mode, onSelectBench }: Props) {
-  const bench = useSquad((s) => s.bench)
+  const activeSide = useSquad((s) => s.activeSide)
+  const bench = useSquad((s) => s[s.activeSide].bench)
+  const subsLeft = useSquad((s) => s[s.activeSide].subsLeft)
   const roster = useSquad((s) => s.roster)
-  const subsLeft = useSquad((s) => s.subsLeft)
+  const meta = team(activeSide)
   const armed = mode.kind === 'sub' ? mode.benchIndex : null
 
   return (
     <section aria-label="Substitutes" className="panel mx-4 mt-4 overflow-hidden">
       <div className="flex items-center gap-2 px-3 pt-2.5 pb-1.5">
-        <h2 className="label-micro">Bench</h2>
+        <h2 className="label-micro">
+          Bench · <span style={{ color: meta.accent }}>{meta.label}</span>
+        </h2>
         <span className="text-2xs text-ink-faint">
           {subsLeft > 0 ? `${subsLeft} subs left` : 'no subs left'}
         </span>
@@ -31,7 +36,12 @@ export function BenchStrip({ mode, onSelectBench }: Props) {
           <motion.span
             initial={{ opacity: 0, x: -6 }}
             animate={{ opacity: 1, x: 0 }}
-            className="display ml-auto rounded-full bg-lime-500/15 px-2 py-0.5 text-2xs tracking-wider text-lime-200 uppercase ring-1 ring-lime-500/40"
+            className="display ml-auto rounded-full px-2 py-0.5 text-2xs tracking-wider uppercase"
+            style={{
+              background: `color-mix(in srgb, ${meta.accent} 16%, transparent)`,
+              color: meta.accentSoft,
+              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${meta.accent} 42%, transparent)`,
+            }}
           >
             Tap a starter
           </motion.span>
@@ -58,19 +68,17 @@ export function BenchStrip({ mode, onSelectBench }: Props) {
 
           return (
             <Tappable
-              key={p.id}
+              key={`${p.id}-${i}`}
               disabled={disabled}
               onTap={() => onSelectBench(i)}
-              ariaLabel={`Substitute ${p.name} on`}
+              ripple={`color-mix(in srgb, ${meta.accent} 42%, transparent)`}
+              ariaLabel={`Substitute ${p.name} on for ${meta.label}`}
               className={`glass tap w-[4.75rem] shrink-0 rounded-xl px-1.5 pt-1.5 pb-2 ${
                 disabled ? 'opacity-45' : ''
               }`}
               style={
                 isArmed
-                  ? {
-                      boxShadow:
-                        '0 0 0 2px var(--color-lime-400), 0 0 26px -6px var(--color-lime-400)',
-                    }
+                  ? { boxShadow: `0 0 0 2px ${meta.accent}, 0 0 26px -6px ${meta.accent}` }
                   : undefined
               }
             >

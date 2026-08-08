@@ -4,8 +4,10 @@ import type { Player } from '../types'
 
 /**
  * Greedy global assignment: score every (slot, player) pair by position fit
- * first and effective rating second, then take the best pairs until the XI is
- * full. Good enough to always beat a hand-shuffled squad, and instant.
+ * first and effective rating second, then take the best pairs until the seven
+ * are full. Good enough to always beat a hand-shuffled squad, and instant.
+ * The pool is whoever is passed in `lineup`, so handing it more players than
+ * there are slots picks the best subset.
  */
 export function autoFit(
   roster: Roster,
@@ -25,7 +27,7 @@ export function autoFit(
   }
   pairs.sort((a, b) => b.score - a.score)
 
-  const out: (string | null)[] = Array.from({ length: 11 }, () => null)
+  const out: (string | null)[] = Array.from({ length: slots.length }, () => null)
   const usedSlots = new Set<number>()
   const usedIds = new Set<string>()
   for (const pair of pairs) {

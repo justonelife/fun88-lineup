@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Pitch, type PitchMode } from '../components/Pitch'
 import { BenchStrip } from '../components/BenchStrip'
 import { FormationSelector } from '../components/FormationSelector'
+import { SideToggle } from '../components/SideToggle'
 import { PlayerSheet, type SheetAction } from '../components/PlayerSheet'
 import { Sheet } from '../components/ui/Sheet'
 import { Tappable } from '../components/ui/Tappable'
@@ -10,9 +11,9 @@ import { Avatar } from '../components/ui/Avatar'
 import { OvrBadge } from '../components/ui/OvrBadge'
 import { resolve } from '../lib/chemistry'
 import { shortName } from '../lib/lineup'
-import { useDerived } from '../store/derived'
+import { useVersus } from '../store/derived'
 import { useSquad } from '../store/useSquad'
-import type { Player } from '../types'
+import type { Player, Side, Vec } from '../types'
 
 /** Transient bottom toast — confirms a mutation without stealing focus. */
 function Toast({ message }: { message: string | null }) {
@@ -35,19 +36,27 @@ function Toast({ message }: { message: string | null }) {
   )
 }
 
+/**
+ * The versus board. One pitch, two squads, one active side: every control on
+ * this screen edits whichever team the HOME | AWAY switch points at, and the
+ * opposing seven stay on screen for comparison.
+ */
 export function LineupScreen() {
-  const { formation, chem, roster, lineup } = useDerived()
-  const bench = useSquad((s) => s.bench)
-  const subsLeft = useSquad((s) => s.subsLeft)
+  const { home, away, activeSide } = useVersus()
+  const active = activeSide === 'home' ? home : away
+
+  const setActiveSide = useSquad((s) => s.setActiveSide)
   const swapSlots = useSquad((s) => s.swapSlots)
   const substitute = useSquad((s) => s.substitute)
   const assignToSlot = useSquad((s) => s.assignToSlot)
   const clearSlot = useSquad((s) => s.clearSlot)
   const addToBench = useSquad((s) => s.addToBench)
   const autoFitLineup = useSquad((s) => s.autoFitLineup)
+  const setPosition = useSquad((s) => s.setPosition)
+  const resetPositions = useSquad((s) => s.resetPositions)
 
   const [mode, setMode] = useState<PitchMode>({ kind: 'idle' })
-  const [sheetSlot, setSheetSlot] = useState<number | null>(null)
+  const [sheet, setSheet] = useState<{ side: Side; slot: number } | null>(null)
   const [pickerSlot, setPickerSlot] = useState<number | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
@@ -58,12 +67,21 @@ export function LineupScreen() {
 
   const idle = () => setMode({ kind: 'idle' })
 
-  const onTapSlot = (slot: number) => {
+  const onTapToken = (side: Side, slot: number) => {
+    // The opposing side is inspectable but never editable — one tap opens the
+    // read-only sheet, the switch above is the way in.
+    if (side !== activeSide) {
+      const other = side === 'home' ? home : away
+      if (other.lineup[slot]) setSheet({ side, slot })
+      else flash(`Switch to ${other.meta.label} to edit that side`)
+      return
+    }
+
     if (mode.kind === 'sub') {
-      const incoming = resolve(roster, bench[mode.benchIndex])
-      const outgoing = resolve(roster, lineup[slot])
-      if (incoming && subsLeft > 0) {
-        substitute(mode.benchIndex, slot)
+      const incoming = resolve(active.roster, active.bench[mode.benchIndex])
+      const outgoing = resolve(active.roster, active.lineup[slot])
+      if (incoming && active.subsLeft > 0) {
+        substitute(activeSide, mode.benchIndex, slot)
         flash(
           outgoing
             ? `${shortName(outgoing.name)} off · ${shortName(incoming.name)} on`
@@ -78,94 +96,115 @@ export function LineupScreen() {
         idle()
         return
       }
-      swapSlots(mode.slot, slot)
+      swapSlots(activeSide, mode.slot, slot)
       flash('Positions swapped')
       idle()
       return
     }
-    if (!lineup[slot]) {
+    if (!active.lineup[slot]) {
       setPickerSlot(slot)
       return
     }
-    setSheetSlot(slot)
+    setSheet({ side, slot })
   }
 
   const onLongPressSlot = (slot: number) => {
-    if (!lineup[slot]) return
+    if (!active.lineup[slot]) return
     setMode({ kind: 'swap', slot })
   }
 
   const onDropSwap = (a: number, b: number) => {
-    swapSlots(a, b)
+    swapSlots(activeSide, a, b)
+    idle()
+  }
+
+  const onDropFree = (slot: number, at: Vec) => {
+    if (!active.lineup[slot]) return
+    setPosition(activeSide, slot, at)
     idle()
   }
 
   const onSelectBench = (index: number) => {
     setMode((m) =>
-      m.kind === 'sub' && m.benchIndex === index ? { kind: 'idle' } : { kind: 'sub', benchIndex: index },
+      m.kind === 'sub' && m.benchIndex === index
+        ? { kind: 'idle' }
+        : { kind: 'sub', benchIndex: index },
     )
   }
 
   // ── sheets ────────────────────────────────────────────────────────────────
-  const sheetPlayer = sheetSlot === null ? undefined : resolve(roster, lineup[sheetSlot])
-  const sheetSlotDef = sheetSlot === null ? undefined : formation.slots[sheetSlot]
+  const sheetTeam = sheet ? (sheet.side === 'home' ? home : away) : undefined
+  const sheetPlayer = sheet && sheetTeam ? resolve(sheetTeam.roster, sheetTeam.lineup[sheet.slot]) : undefined
+  const sheetSlotDef = sheet && sheetTeam ? sheetTeam.formation.slots[sheet.slot] : undefined
+  const sheetEditable = sheet?.side === activeSide
 
   const actions: SheetAction[] = useMemo(() => {
-    if (sheetSlot === null || !sheetPlayer) return []
+    if (!sheet || !sheetPlayer || !sheetEditable) return []
+    const slot = sheet.slot
     return [
       {
         label: 'Swap with…',
         hint: 'then tap another starter',
         primary: true,
         onTap: () => {
-          setMode({ kind: 'swap', slot: sheetSlot })
-          setSheetSlot(null)
+          setMode({ kind: 'swap', slot })
+          setSheet(null)
         },
       },
       {
         label: 'To bench',
         hint: 'frees the slot',
         onTap: () => {
-          clearSlot(sheetSlot)
-          addToBench(sheetPlayer.id)
-          setSheetSlot(null)
+          clearSlot(activeSide, slot)
+          addToBench(activeSide, sheetPlayer.id)
+          setSheet(null)
           flash(`${shortName(sheetPlayer.name)} to the bench`)
         },
       },
       {
-        label: 'Auto-fit the XI',
+        label: 'Auto-fit the seven',
         hint: 'best slot for everyone',
         onTap: () => {
-          autoFitLineup()
-          setSheetSlot(null)
+          autoFitLineup(activeSide)
+          setSheet(null)
           flash('Lineup auto-fitted')
         },
       },
     ]
-  }, [sheetSlot, sheetPlayer, clearSlot, addToBench, autoFitLineup, flash])
+  }, [sheet, sheetPlayer, sheetEditable, activeSide, clearSlot, addToBench, autoFitLineup, flash])
 
   const pickerOptions = useMemo(
-    () => bench.map((id) => resolve(roster, id)).filter((p): p is Player => Boolean(p)),
-    [bench, roster],
+    () => active.bench.map((id) => resolve(active.roster, id)).filter((p): p is Player => Boolean(p)),
+    [active.bench, active.roster],
   )
+
+  const moved = active.positions.filter(Boolean).length
 
   const banner =
     mode.kind === 'swap'
-      ? 'Swap mode — tap another starter, or drag a token onto one'
+      ? `Swap mode — tap another ${active.meta.label.toLowerCase()} starter, or drag a token onto one`
       : mode.kind === 'sub'
         ? 'Substitution armed — tap the starter coming off'
         : null
 
   return (
     <div className="pb-4">
+      <SideToggle
+        className="px-4 pb-3"
+        hint={`Editing ${active.meta.name} — the ${
+          activeSide === 'home' ? away.meta.name : home.meta.name
+        } seven are tap-to-inspect only.`}
+      />
+
       <FormationSelector />
 
       <div className="mt-3 px-4">
         <Pitch
           mode={mode}
-          onTapSlot={onTapSlot}
+          onTapToken={onTapToken}
           onLongPressSlot={onLongPressSlot}
           onDropSwap={onDropSwap}
+          onDropFree={onDropFree}
         />
       </div>
 
@@ -176,35 +215,64 @@ export function LineupScreen() {
             <motion.button
               key={mode.kind}
               onClick={idle}
-              className="tap flex w-full items-center justify-between gap-3 rounded-xl bg-lime-500/12 px-3 py-2.5 text-left ring-1 ring-lime-500/35"
+              className="tap flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left"
+              style={{
+                background: `color-mix(in srgb, ${active.meta.accent} 12%, transparent)`,
+                boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${active.meta.accent} 35%, transparent)`,
+              }}
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
             >
-              <span className="text-xs text-lime-200">{banner}</span>
-              <span className="label-micro shrink-0 text-lime-300">Cancel</span>
+              <span className="text-xs" style={{ color: active.meta.accentSoft }}>
+                {banner}
+              </span>
+              <span className="label-micro shrink-0" style={{ color: active.meta.accent }}>
+                Cancel
+              </span>
             </motion.button>
           ) : (
             <motion.div
               key="hints"
-              className="flex items-center gap-2"
+              className="space-y-2"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <Tappable
-                onTap={autoFitLineup}
-                ariaLabel="Auto-fit lineup"
-                className="tap btn-ghost display flex-1 rounded-xl px-3 py-2 text-xs tracking-wide"
-              >
-                Auto-fit XI
-              </Tappable>
-              <span className="measure flex-[2] text-2xs text-ink-faint">
-                Tap a player for detail · long-press to swap · drag onto another slot ·
-                {chem.outOfPosition > 0
-                  ? ` ${chem.outOfPosition} out of position`
+              <div className="flex items-center gap-2">
+                <Tappable
+                  onTap={() => {
+                    autoFitLineup(activeSide)
+                    flash(`${active.meta.name} auto-fitted`)
+                  }}
+                  ripple={`color-mix(in srgb, ${active.meta.accent} 42%, transparent)`}
+                  ariaLabel={`Auto-fit ${active.meta.label} lineup`}
+                  className="tap btn-ghost display flex-1 rounded-xl px-3 py-2 text-xs tracking-wide"
+                >
+                  Auto-fit seven
+                </Tappable>
+                <Tappable
+                  onTap={() => {
+                    resetPositions(activeSide)
+                    flash('Back to formation shape')
+                  }}
+                  disabled={moved === 0}
+                  ripple={`color-mix(in srgb, ${active.meta.accent} 42%, transparent)`}
+                  ariaLabel="Reset custom positions"
+                  className={`tap btn-ghost display flex-1 rounded-xl px-3 py-2 text-xs tracking-wide ${
+                    moved === 0 ? 'opacity-40' : ''
+                  }`}
+                >
+                  Reset positions{moved > 0 ? ` (${moved})` : ''}
+                </Tappable>
+              </div>
+              <p className="measure text-2xs text-ink-faint">
+                Tap for detail · long-press to swap · drag onto a team-mate to swap, or onto open
+                grass to stand there ·
+                {active.chem.outOfPosition > 0
+                  ? ` ${active.chem.outOfPosition} out of position`
                   : ' every starter in position'}
-              </span>
+              </p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -213,21 +281,41 @@ export function LineupScreen() {
       <BenchStrip mode={mode} onSelectBench={onSelectBench} />
 
       <PlayerSheet
-        open={sheetSlot !== null}
-        onClose={() => setSheetSlot(null)}
+        open={sheet !== null}
+        onClose={() => setSheet(null)}
         player={sheetPlayer}
         slotPos={sheetSlotDef?.pos}
-        fit={sheetSlot === null ? undefined : chem.fits[sheetSlot]}
-        chem={sheetSlot === null ? undefined : chem.perSlot[sheetSlot]}
+        fit={sheet && sheetTeam ? sheetTeam.chem.fits[sheet.slot] : undefined}
+        chem={sheet && sheetTeam ? sheetTeam.chem.perSlot[sheet.slot] : undefined}
         membership="xi"
-        actions={actions}
+        note={
+          sheetEditable
+            ? undefined
+            : `Starting for ${sheetTeam?.meta.name}. Switch the board to ${sheetTeam?.meta.label} to change this side.`
+        }
+        actions={
+          sheetEditable
+            ? actions
+            : [
+                {
+                  label: `Edit ${sheetTeam?.meta.label ?? ''}`,
+                  hint: 'switch the active side',
+                  primary: true,
+                  onTap: () => {
+                    if (sheet) setActiveSide(sheet.side)
+                    setSheet(null)
+                  },
+                },
+              ]
+        }
       />
 
       {/* empty-slot picker */}
       <Sheet open={pickerSlot !== null} onClose={() => setPickerSlot(null)} label="Fill slot">
         <div className="px-4 pb-6">
           <h2 className="display text-lg text-ink">
-            Fill {pickerSlot !== null ? formation.slots[pickerSlot]?.pos : ''}
+            Fill {pickerSlot !== null ? active.formation.slots[pickerSlot]?.pos : ''} ·{' '}
+            <span style={{ color: active.meta.accent }}>{active.meta.label}</span>
           </h2>
           <p className="measure mt-1 text-xs text-ink-faint">
             Pick a substitute to drop straight into the empty slot, or head to the Squad tab for
@@ -244,9 +332,9 @@ export function LineupScreen() {
                 className="glass tap flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left"
                 onTap={() => {
                   if (pickerSlot === null) return
-                  assignToSlot(p.id, pickerSlot)
+                  assignToSlot(activeSide, p.id, pickerSlot)
                   setPickerSlot(null)
-                  flash(`${shortName(p.name)} into the XI`)
+                  flash(`${shortName(p.name)} into the seven`)
                 }}
               >
                 <Avatar player={p} size={34} />

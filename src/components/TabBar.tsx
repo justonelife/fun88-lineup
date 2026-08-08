@@ -33,9 +33,9 @@ const ICONS: Record<Tab, ReactNode> = {
   ),
 }
 
-/* Key order drives render order: Lineup → Tactics → Squad → Match. */
+/* Key order drives render order: Versus → Tactics → Squad → Match. */
 const LABELS: Record<Tab, string> = {
-  lineup: 'Lineup',
+  lineup: 'Versus',
   tactics: 'Tactics',
   squad: 'Squad',
   report: 'Match',

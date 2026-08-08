@@ -1,5 +1,5 @@
-import { linksFor, getFormation } from '../data/formations'
-import type { Player, Pos, Tactics } from '../types'
+import { getFormation, linksForPositions, slotPoints } from '../data/formations'
+import type { Player, Pos, Tactics, Vec } from '../types'
 
 export type Roster = Record<string, Player>
 
@@ -67,15 +67,25 @@ export interface ChemistryReport {
   perSlot: number[]
   fits: PosFit[]
   outOfPosition: number
+  /** Where each slot actually stands — custom position or shape default. */
+  points: Vec[]
 }
 
+/**
+ * Chemistry of one team. `positions` are the free-drag overrides: the link web
+ * is built from where the players actually stand, so dragging a token rewires
+ * its neighbours. Position fit stays keyed to the slot's nominal role.
+ */
 export function computeChemistry(
   roster: Roster,
   formationId: string,
   lineup: (string | null)[],
+  positions?: Array<Vec | null> | null,
 ): ChemistryReport {
   const formation = getFormation(formationId)
-  const links = linksFor(formationId)
+  const points = slotPoints(formationId, positions)
+  // Only occupied slots take part in the web — an empty shirt links to nobody.
+  const links = linksForPositions(points.map((p, i) => (lineup[i] ? p : null)))
 
   const fits: PosFit[] = formation.slots.map((slot) => {
     const p = resolve(roster, lineup[slot.i])
@@ -98,7 +108,10 @@ export function computeChemistry(
   })
 
   const filled = lineup.filter(Boolean).length
-  const team = filled === 0 ? 0 : Math.round((perSlot.reduce((s, v) => s + v, 0) / (11 * 10)) * 100)
+  const team =
+    filled === 0
+      ? 0
+      : Math.round((perSlot.reduce((s, v) => s + v, 0) / (formation.slots.length * 10)) * 100)
 
   return {
     team: Math.max(0, Math.min(100, team)),
@@ -106,6 +119,7 @@ export function computeChemistry(
     perSlot,
     fits,
     outOfPosition: fits.filter((f, i) => lineup[i] && f === 0).length,
+    points,
   }
 }
 
@@ -147,7 +161,7 @@ export function tacticsFit(tactics: Tactics, formationId: string, xi: Player[]):
   // Attacking mentality without defensive cover is a risk.
   score -= Math.max(0, (tactics.mentality - 60) * (72 - avgDef)) / 60
   // Extreme width in a narrow shape (or the reverse) is incoherent.
-  const wide = ['433', '442', '343', '541', '451'].includes(formationId)
+  const wide = ['231', '240', '312', '132'].includes(formationId)
   score += wide ? (tactics.width - 45) / 6 : (55 - tactics.width) / 6
   // Reward decisiveness — a fully neutral setup is a plan-less plan.
   const spread =

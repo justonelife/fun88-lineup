@@ -1,10 +1,11 @@
 import { motion } from 'motion/react'
 import { Slider } from '../components/ui/Slider'
 import { Tappable } from '../components/ui/Tappable'
+import { SideToggle } from '../components/SideToggle'
 import { PRESETS, TACTIC_KEYS, matchPreset } from '../data/tactics'
 import { tacticsFit } from '../lib/chemistry'
 import { useDelta } from '../lib/useDelta'
-import { useDerived } from '../store/derived'
+import { useActiveTeam } from '../store/derived'
 import { useSquad } from '../store/useSquad'
 
 function fitTone(v: number): string {
@@ -21,11 +22,13 @@ function fitVerdict(v: number): string {
 }
 
 /**
- * Tactics board. The fit gauge is the single loudest element — every slider
- * feeds it, so the screen always answers "did that help?" in one glance.
+ * Tactics board for one side at a time. The fit gauge is the single loudest
+ * element — every slider feeds it, so the screen always answers "did that
+ * help?" in one glance, for whichever team the switch points at.
  */
 export function TacticsScreen() {
-  const { fit, ovr, xi, formation, tactics } = useDerived()
+  const activeSide = useSquad((s) => s.activeSide)
+  const { fit, ovr, xi, formation, tactics, meta } = useActiveTeam()
   const setTactic = useSquad((s) => s.setTactic)
   const applyTactics = useSquad((s) => s.applyTactics)
 
@@ -35,11 +38,15 @@ export function TacticsScreen() {
 
   return (
     <div className="space-y-4 px-4 pb-6">
+      <SideToggle hint={`Presets and sliders below apply to ${meta.name}.`} />
+
       {/* ── fit gauge ─────────────────────────────────────────────────────── */}
       <section className="panel px-4 py-4" aria-label="Tactical fit">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h2 className="label-micro">Tactical fit</h2>
+            <h2 className="label-micro">
+              Tactical fit · <span style={{ color: meta.accent }}>{meta.label}</span>
+            </h2>
             <div className="flex items-baseline gap-2">
               <motion.span
                 key={fit}
@@ -91,7 +98,8 @@ export function TacticsScreen() {
         </div>
         <p className="measure mt-2 text-xs text-ink-muted">{fitVerdict(fit)}</p>
         <p className="mt-1 text-2xs text-ink-faint">
-          Measured against {formation.name} and the {xi.length} players currently starting.
+          Measured against {formation.name} and the {xi.length} players currently starting for{' '}
+          {meta.name}.
         </p>
       </section>
 
@@ -105,41 +113,42 @@ export function TacticsScreen() {
             return (
               <Tappable
                 key={preset.id}
-                ariaLabel={`Apply ${preset.name}`}
-                onTap={() => applyTactics(preset.values)}
-                className={`tap relative flex flex-col items-start gap-1 rounded-xl px-3 py-2.5 text-left ${
-                  active ? 'text-base' : 'glass text-ink'
-                }`}
+                ariaLabel={`Apply ${preset.name} to ${meta.label}`}
+                onTap={() => applyTactics(activeSide, preset.values)}
+                ripple={`color-mix(in srgb, ${meta.accent} 42%, transparent)`}
+                className="tap relative flex flex-col items-start gap-1 rounded-xl px-3 py-2.5 text-left"
+                style={active ? { color: meta.onAccent } : undefined}
               >
-                {active && (
+                {active ? (
                   <motion.span
                     layoutId="preset-active"
                     className="absolute inset-0 -z-10 rounded-xl"
                     style={{
-                      background:
-                        'linear-gradient(160deg, var(--color-lime-400), var(--color-lime-600))',
-                      boxShadow: '0 6px 22px -8px var(--color-lime-500)',
+                      background: `linear-gradient(160deg, ${meta.accent}, ${meta.accentDeep})`,
+                      boxShadow: `0 6px 22px -8px ${meta.accent}`,
                     }}
                     transition={{ type: 'spring', stiffness: 460, damping: 36 }}
                   />
+                ) : (
+                  <span className="glass absolute inset-0 -z-10 rounded-xl" />
                 )}
                 <span className="flex w-full items-center justify-between gap-2">
                   <span className="display text-sm leading-none tracking-wide">{preset.name}</span>
                   <span
                     className="display tnum text-2xs"
-                    style={{ color: active ? 'rgba(8,18,10,.7)' : fitTone(projected) }}
+                    style={{ color: active ? undefined : fitTone(projected), opacity: active ? 0.7 : 1 }}
                   >
                     {projected}
                   </span>
                 </span>
                 <span
                   className={`display text-2xs tracking-widest uppercase ${
-                    active ? 'text-base/70' : 'text-ink-faint'
+                    active ? 'opacity-70' : 'text-ink-faint'
                   }`}
                 >
                   {preset.tag}
                 </span>
-                <span className={`text-2xs ${active ? 'text-base/80' : 'text-ink-muted'}`}>
+                <span className={`text-2xs ${active ? 'opacity-80' : 'text-ink-muted'}`}>
                   {preset.blurb}
                 </span>
               </Tappable>
@@ -158,13 +167,16 @@ export function TacticsScreen() {
         </div>
         {TACTIC_KEYS.map((t) => (
           <Slider
-            key={t.key}
+            key={`${activeSide}-${t.key}`}
             label={t.label}
             low={t.low}
             high={t.high}
             hint={t.hint}
             value={tactics[t.key]}
-            onChange={(v) => setTactic(t.key, v)}
+            accent={meta.accent}
+            accentSoft={meta.accentSoft}
+            accentDeep={meta.accentDeep}
+            onChange={(v) => setTactic(activeSide, t.key, v)}
           />
         ))}
       </section>

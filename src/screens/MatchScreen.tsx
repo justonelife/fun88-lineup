@@ -6,9 +6,9 @@ import { Meter } from '../components/ui/Bars'
 import { simulateMatch } from '../lib/match'
 import { useDelta } from '../lib/useDelta'
 import { shortName } from '../lib/lineup'
-import { useDerived } from '../store/derived'
-import { MAX_SUBS, useSquad } from '../store/useSquad'
-import type { MatchEvent, MatchResult } from '../types'
+import { useVersus, type TeamDerived } from '../store/derived'
+import { MAX_SUBS, XI_SIZE, useSquad } from '../store/useSquad'
+import type { MatchEvent, MatchResult, Player, PlayerRating } from '../types'
 
 const BEAT_MS = 520
 
@@ -39,14 +39,99 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   )
 }
 
+/** One team's line in the pre-match card — identical metrics both sides, so the
+ *  mismatch (or the lack of one) is readable in a single scan. */
+function TeamLine({ t, align }: { t: TeamDerived; align: 'left' | 'right' }) {
+  const right = align === 'right'
+  return (
+    <div className={`min-w-0 flex-1 ${right ? 'text-right' : 'text-left'}`}>
+      <span className="display block truncate text-sm leading-tight" style={{ color: t.meta.accentSoft }}>
+        {t.meta.name}
+      </span>
+      <span className="label-micro block">
+        {t.formation.name} · {t.formation.shape}
+      </span>
+      <div className={`mt-1.5 flex items-baseline gap-2 ${right ? 'justify-end' : ''}`}>
+        <span className="display tnum text-3xl leading-none text-gold-300">{t.ovr.total}</span>
+        <span className="display tnum text-xs text-ink-muted">{t.chem.team}% chem</span>
+      </div>
+      <span className="label-micro mt-1 block">
+        {t.avgStamina} stamina · {t.subsLeft}/{MAX_SUBS} subs
+      </span>
+    </div>
+  )
+}
+
+function RatingRow({
+  r,
+  player,
+  delay,
+  compact,
+}: {
+  r: PlayerRating
+  player: Player
+  delay: number
+  compact?: boolean
+}) {
+  return (
+    <motion.div
+      className="glass flex items-center gap-2.5 rounded-xl px-2.5 py-1.5"
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay, duration: 0.25 }}
+      style={compact ? { opacity: 0.9 } : undefined}
+    >
+      <Avatar player={player} size={compact ? 24 : 28} />
+      <span className="min-w-0 flex-1">
+        <span className="display block truncate text-xs text-ink">{shortName(player.name)}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="label-micro">{player.pos}</span>
+          {r.goals > 0 && (
+            <span className="text-2xs text-lime-300">{'⚽'.repeat(Math.min(3, r.goals))}</span>
+          )}
+          {r.assists > 0 && (
+            <span className="text-2xs" style={{ color: 'var(--color-info)' }}>
+              {r.assists}A
+            </span>
+          )}
+          <span className="w-12">
+            <Meter value={player.stamina} height={3} />
+          </span>
+          <span className="label-micro">−{r.staminaLost} stam</span>
+        </span>
+      </span>
+
+      {r.ovrDelta !== 0 && (
+        <span
+          className="display tnum text-2xs"
+          style={{ color: r.ovrDelta > 0 ? 'var(--color-chem-strong)' : 'var(--color-chem-weak)' }}
+        >
+          {r.ovrDelta > 0 ? '▲' : '▼'} {Math.abs(r.ovrDelta)} ovr
+        </span>
+      )}
+
+      <span
+        className="display tnum shrink-0 rounded-md px-1.5 py-0.5 text-xs"
+        style={{
+          color: ratingTone(r.rating),
+          background: 'rgba(0,0,0,.4)',
+          border: `1px solid ${ratingTone(r.rating)}55`,
+        }}
+      >
+        {r.rating.toFixed(1)}
+      </span>
+    </motion.div>
+  )
+}
+
 interface Props {
   /** Bumped by the header Play button to kick a match off from anywhere. */
   playSignal: number
 }
 
 export function MatchScreen({ playSignal }: Props) {
-  const { ovr, chem, avgStamina, roster, lineup, formation, tactics } = useDerived()
-  const subsLeft = useSquad((s) => s.subsLeft)
+  const { home, away } = useVersus()
+  const roster = useSquad((s) => s.roster)
   const lastMatch = useSquad((s) => s.lastMatch)
   const finishMatch = useSquad((s) => s.finishMatch)
   const recover = useSquad((s) => s.recover)
@@ -55,23 +140,25 @@ export function MatchScreen({ playSignal }: Props) {
   const [shown, setShown] = useState(0)
   const feedRef = useRef<HTMLDivElement>(null)
   const appliedRef = useRef<number | null>(null)
-  const ovrDelta = useDelta(ovr.total)
+  const ovrDelta = useDelta(home.ovr.total)
 
-  const filled = lineup.filter(Boolean).length
+  const short = XI_SIZE - Math.min(home.filled, away.filled)
+  const ready = home.filled >= XI_SIZE && away.filled >= XI_SIZE
 
   const kickOff = useCallback(() => {
-    if (live || filled < 11) return
-    const result = simulateMatch({
-      roster,
-      lineup,
-      formationId: formation.id,
-      tactics,
-      teamOvr: ovr.total,
-      chem: chem.team,
+    if (live || !ready) return
+    const sideOf = (t: TeamDerived) => ({
+      name: t.meta.name,
+      roster: t.roster,
+      lineup: t.lineup,
+      formationId: t.formation.id,
+      tactics: t.tactics,
+      teamOvr: t.ovr.total,
+      chem: t.chem.team,
     })
-    setLive(result)
+    setLive(simulateMatch(sideOf(home), sideOf(away)))
     setShown(1)
-  }, [live, filled, roster, lineup, formation.id, tactics, ovr.total, chem.team])
+  }, [live, ready, home, away])
 
   // Header "Play" button — ignore the initial render.
   const seenSignal = useRef(playSignal)
@@ -111,6 +198,10 @@ export function MatchScreen({ playSignal }: Props) {
     () => (report ? [...report.ratings].sort((a, b) => b.rating - a.rating) : []),
     [report],
   )
+  const awayRatings = useMemo(
+    () => (report ? [...report.awayRatings].sort((a, b) => b.rating - a.rating) : []),
+    [report],
+  )
 
   return (
     <div className="space-y-4 px-4 pb-6">
@@ -120,45 +211,62 @@ export function MatchScreen({ playSignal }: Props) {
           className="px-4 py-4"
           style={{
             background:
-              'radial-gradient(120% 80% at 50% 0%, rgba(147,220,18,.14), transparent 65%)',
+              'radial-gradient(90% 70% at 0% 0%, rgba(147,220,18,.13), transparent 60%), radial-gradient(90% 70% at 100% 0%, rgba(255,106,61,.13), transparent 60%)',
           }}
         >
-          <h2 className="label-micro">Match day</h2>
-          <p className="display mt-1 text-2xl leading-none text-ink">Ultra XI</p>
-          <p className="measure mt-1.5 text-xs text-ink-muted">
-            {formation.name} · {formation.shape}. Ninety minutes against whoever the draw gives
-            you — chemistry, tactical fit and tired legs all show up in the result.
+          <h2 className="label-micro">Match day · 7 a side</h2>
+
+          <div className="mt-2.5 flex items-start gap-3">
+            <TeamLine t={home} align="left" />
+            <span className="display shrink-0 self-center rounded-lg bg-surface-2 px-2 py-1 text-2xs tracking-[0.28em] text-ink-faint uppercase ring-1 ring-hairline">
+              Vs
+            </span>
+            <TeamLine t={away} align="right" />
+          </div>
+
+          <p className="measure mt-3 text-xs text-ink-muted">
+            Ninety minutes, both squads exactly as you left them — shape, chemistry, tactical fit
+            and tired legs all show up in the result.
           </p>
 
-          <div className="mt-3 grid grid-cols-4 gap-2">
-            <Stat label="Ovr" value={`${ovr.total}`} sub={`base ${ovr.base}`} />
-            <Stat label="Chem" value={`${chem.team}%`} />
-            <Stat label="Stamina" value={`${avgStamina}`} sub="squad avg" />
-            <Stat label="Subs" value={`${subsLeft}`} sub={`of ${MAX_SUBS}`} />
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <Stat
+              label="Ovr edge"
+              value={`${home.ovr.total - away.ovr.total >= 0 ? '+' : ''}${home.ovr.total - away.ovr.total}`}
+              sub="home minus away"
+            />
+            <Stat
+              label="Chem edge"
+              value={`${home.chem.team - away.chem.team >= 0 ? '+' : ''}${home.chem.team - away.chem.team}`}
+              sub="percentage points"
+            />
+            <Stat label="Fit" value={`${home.fit} / ${away.fit}`} sub="tactical coherence" />
           </div>
 
           <div className="mt-3 flex gap-2">
             <Tappable
               ariaLabel="Play match"
-              disabled={filled < 11 || Boolean(live)}
+              disabled={!ready || Boolean(live)}
               onTap={kickOff}
               className={`tap btn-primary flex-1 rounded-xl px-4 py-3 text-sm ${
-                filled < 11 || live ? 'opacity-45' : ''
+                !ready || live ? 'opacity-45' : ''
               }`}
             >
               {live ? 'In progress…' : 'Play match'}
             </Tappable>
             <Tappable
-              ariaLabel="Rest the squad"
+              ariaLabel="Rest both squads"
               onTap={recover}
               className="tap btn-ghost display rounded-xl px-4 py-3 text-xs tracking-wide"
             >
-              Rest squad
+              Rest squads
             </Tappable>
           </div>
-          {filled < 11 && (
+          {!ready && (
             <p className="mt-2 text-2xs" style={{ color: 'var(--color-chem-weak)' }}>
-              {11 - filled} empty slot{filled === 10 ? '' : 's'} — fill the XI before kick off.
+              {home.filled < XI_SIZE ? `${home.meta.name} ` : `${away.meta.name} `}
+              {short === 1 ? 'is one player short' : `is ${short} players short`} — both sevens must
+              be full before kick off.
             </p>
           )}
         </div>
@@ -176,7 +284,9 @@ export function MatchScreen({ playSignal }: Props) {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h2 className="label-micro">Last result</h2>
-              <p className="display truncate text-sm text-ink">vs {report.opponent}</p>
+              <p className="display truncate text-sm text-ink">
+                {report.homeName} vs {report.awayName}
+              </p>
             </div>
             <span
               className="display tnum text-3xl leading-none"
@@ -197,75 +307,34 @@ export function MatchScreen({ playSignal }: Props) {
             <Stat label="Possession" value={`${report.possession}%`} />
             <Stat label="Shots" value={`${report.shots}`} sub={`${report.shotsAgainst} against`} />
             <Stat
-              label="Team ovr"
-              value={`${ovr.total}`}
+              label="Home ovr"
+              value={`${home.ovr.total}`}
               sub={ovrDelta ? `${ovrDelta.from} → ${ovrDelta.to}` : 'unchanged'}
             />
           </div>
 
-          <h3 className="label-micro mt-4 mb-2">Player ratings</h3>
+          <h3 className="label-micro mt-4 mb-2" style={{ color: home.meta.accent }}>
+            {report.homeName} ratings
+          </h3>
           <div className="grid gap-1.5">
             {ratings.map((r, i) => {
               const p = roster[r.playerId]
               if (!p) return null
               return (
-                <motion.div
-                  key={r.playerId}
-                  className="glass flex items-center gap-2.5 rounded-xl px-2.5 py-1.5"
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.03, duration: 0.25 }}
-                >
-                  <Avatar player={p} size={28} />
-                  <span className="min-w-0 flex-1">
-                    <span className="display block truncate text-xs text-ink">
-                      {shortName(p.name)}
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="label-micro">{p.pos}</span>
-                      {r.goals > 0 && (
-                        <span className="text-2xs text-lime-300">
-                          {'⚽'.repeat(Math.min(3, r.goals))}
-                        </span>
-                      )}
-                      {r.assists > 0 && (
-                        <span className="text-2xs text-info" style={{ color: 'var(--color-info)' }}>
-                          {r.assists}A
-                        </span>
-                      )}
-                      <span className="w-12">
-                        <Meter value={p.stamina} height={3} />
-                      </span>
-                      <span className="label-micro">−{r.staminaLost} stam</span>
-                    </span>
-                  </span>
+                <RatingRow key={r.playerId} r={r} player={p} delay={i * 0.03} />
+              )
+            })}
+          </div>
 
-                  {r.ovrDelta !== 0 && (
-                    <motion.span
-                      className="display tnum text-2xs"
-                      style={{
-                        color:
-                          r.ovrDelta > 0 ? 'var(--color-chem-strong)' : 'var(--color-chem-weak)',
-                      }}
-                      initial={{ opacity: 0, y: r.ovrDelta > 0 ? 6 : -6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.25 + i * 0.03 }}
-                    >
-                      {r.ovrDelta > 0 ? '▲' : '▼'} {Math.abs(r.ovrDelta)} ovr
-                    </motion.span>
-                  )}
-
-                  <span
-                    className="display tnum shrink-0 rounded-md px-1.5 py-0.5 text-xs"
-                    style={{
-                      color: ratingTone(r.rating),
-                      background: 'rgba(0,0,0,.4)',
-                      border: `1px solid ${ratingTone(r.rating)}55`,
-                    }}
-                  >
-                    {r.rating.toFixed(1)}
-                  </span>
-                </motion.div>
+          <h3 className="label-micro mt-4 mb-2" style={{ color: away.meta.accent }}>
+            {report.awayName} — legs and ovr only
+          </h3>
+          <div className="grid gap-1.5">
+            {awayRatings.map((r, i) => {
+              const p = roster[r.playerId]
+              if (!p) return null
+              return (
+                <RatingRow key={r.playerId} r={r} player={p} delay={i * 0.03} compact />
               )
             })}
           </div>
@@ -274,8 +343,8 @@ export function MatchScreen({ playSignal }: Props) {
 
       {!report && !live && (
         <p className="measure text-xs text-ink-faint">
-          No match played yet. Tune the XI on the Lineup tab and your plan on Tactics, then kick
-          off — the simulation reads both.
+          No match played yet. Build both sevens on the Lineup tab, write a plan for each on
+          Tactics, then kick off — the simulation reads every one of those inputs from both sides.
         </p>
       )}
 
@@ -292,20 +361,38 @@ export function MatchScreen({ playSignal }: Props) {
             <div className="pt-safe border-b border-hairline px-4 py-4">
               <div className="mx-auto flex max-w-3xl items-center gap-3">
                 <span className="min-w-0 flex-1 text-right">
-                  <span className="display block truncate text-sm text-lime-200">Ultra XI</span>
+                  <span
+                    className="display block truncate text-sm"
+                    style={{ color: home.meta.accentSoft }}
+                  >
+                    {live.homeName}
+                  </span>
                   <span className="label-micro">Home</span>
                 </span>
                 <span className="display tnum shrink-0 rounded-xl bg-surface-2 px-4 py-2 text-3xl leading-none text-ink ring-1 ring-hairline">
-                  <motion.span key={`h${homeGoals}`} initial={{ scale: 1.6, color: '#b8f13c' }} animate={{ scale: 1, color: '#e9eef6' }}>
+                  <motion.span
+                    key={`h${homeGoals}`}
+                    initial={{ scale: 1.6, color: '#b8f13c' }}
+                    animate={{ scale: 1, color: '#e9eef6' }}
+                  >
                     {homeGoals}
                   </motion.span>
                   <span className="mx-1.5 text-ink-faint">–</span>
-                  <motion.span key={`a${awayGoals}`} initial={{ scale: 1.6, color: '#ff4f64' }} animate={{ scale: 1, color: '#e9eef6' }}>
+                  <motion.span
+                    key={`a${awayGoals}`}
+                    initial={{ scale: 1.6, color: '#ff6a3d' }}
+                    animate={{ scale: 1, color: '#e9eef6' }}
+                  >
                     {awayGoals}
                   </motion.span>
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="display block truncate text-sm text-ink">{live.opponent}</span>
+                  <span
+                    className="display block truncate text-sm"
+                    style={{ color: away.meta.accentSoft }}
+                  >
+                    {live.awayName}
+                  </span>
                   <span className="label-micro">Away</span>
                 </span>
               </div>
@@ -342,7 +429,7 @@ export function MatchScreen({ playSignal }: Props) {
                             boxShadow:
                               e.team === 'home'
                                 ? '0 0 0 1px var(--color-lime-500), 0 8px 26px -14px var(--color-lime-500)'
-                                : '0 0 0 1px rgba(255,79,100,.6)',
+                                : '0 0 0 1px var(--color-away-500), 0 8px 26px -14px var(--color-away-500)',
                           }
                         : undefined
                     }
@@ -352,11 +439,16 @@ export function MatchScreen({ playSignal }: Props) {
                     </span>
                     <span
                       className="text-sm leading-snug"
-                      style={{ color: KIND_TONE[e.kind] }}
+                      style={{
+                        color:
+                          e.kind === 'goal' && e.team === 'away'
+                            ? 'var(--color-away-300)'
+                            : KIND_TONE[e.kind],
+                      }}
                     >
                       {e.kind === 'goal' && (
                         <span className="display mr-1.5 text-2xs tracking-widest uppercase">
-                          {e.team === 'home' ? 'Goal' : 'Conceded'}
+                          {e.team === 'home' ? `${live.homeName} goal` : `${live.awayName} goal`}
                         </span>
                       )}
                       {e.text}

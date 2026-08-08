@@ -18,6 +18,11 @@ interface Props {
   press?: number
   ariaLabel?: string
   as?: 'button' | 'div'
+  role?: string
+  ariaSelected?: boolean
+  ariaPressed?: boolean
+  /** Ripple tint — defaults to the lime brand, overridden by the away side. */
+  ripple?: string
 }
 
 const LONG_PRESS_MS = 420
@@ -37,6 +42,10 @@ export function Tappable({
   press = 0.955,
   ariaLabel,
   as = 'button',
+  role,
+  ariaSelected,
+  ariaPressed,
+  ripple = 'rgba(184,241,60,.42)',
 }: Props) {
   const [ripples, setRipples] = useState<Ripple[]>([])
   const timer = useRef<number | null>(null)
@@ -80,6 +89,9 @@ export function Tappable({
     <Comp
       type={as === 'button' ? 'button' : undefined}
       aria-label={ariaLabel}
+      role={role}
+      aria-selected={ariaSelected}
+      aria-pressed={ariaPressed}
       disabled={as === 'button' ? disabled : undefined}
       className={`relative overflow-hidden select-none ${className}`}
       style={style}
@@ -99,8 +111,7 @@ export function Tappable({
             style={{
               left: r.x,
               top: r.y,
-              background:
-                'radial-gradient(circle, rgba(184,241,60,.42) 0%, rgba(184,241,60,0) 70%)',
+              background: `radial-gradient(circle, ${ripple} 0%, transparent 70%)`,
             }}
             initial={{ width: 0, height: 0, x: 0, y: 0, opacity: 0.9 }}
             animate={{ width: 220, height: 220, x: -110, y: -110, opacity: 0 }}

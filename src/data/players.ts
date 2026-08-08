@@ -166,29 +166,47 @@ function ids(...names: string[]): string[] {
   })
 }
 
-/** Default XI in canonical slot order (0 = GK, then back → front, left → right).
+/** Home seven in canonical slot order for 2-3-1 (GK, CB, CB, LM, CM, RM, ST).
  *  Deliberately imperfect: a couple of tired legs and a link or two that can be
  *  improved, so chemistry is something you actually tune. */
 export const DEFAULT_XI: string[] = ids(
   'Ivan Petrescu',
-  'Yannick Bastin',
   'Anton Reidel',
   'Bruno Salvatti',
-  'Rafael Cardoso',
-  'Sergio Valcárcel',
+  'Amadou Sarr',
   'Andrés Quintero',
-  'Luca Bernardi',
-  'Vinícius Rocha',
+  'Ilias Bouzid',
   'Viktor Halvorsen',
-  'Gabriel Moreau',
 )
 
 export const DEFAULT_BENCH: string[] = ids(
   'Marek Dolny',
   'Kwame Osafo',
-  'Nico Ferrante',
+  'Yannick Bastin',
   'Fabien Roux',
-  'Emre Solak',
-  'Ilias Bouzid',
+  'Luca Bernardi',
+  'Vinícius Rocha',
   'Leandro Bastos',
+)
+
+/** Away seven — same 2-3-1, no overlap with the home squad, slightly leaner on
+ *  paper so the default board is a contest rather than a mismatch. */
+export const AWAY_XI: string[] = ids(
+  'Théo Vasseur',
+  'Elias Nordvik',
+  'Lars Vindheim',
+  'Mateo Ferreira',
+  'Stefan Vukić',
+  'Owen Traeger',
+  'Karl Weissmann',
+)
+
+export const AWAY_BENCH: string[] = ids(
+  'Kenji Arakawa',
+  'Diego Márquez',
+  'Rafael Cardoso',
+  'Tobias Lindqvist',
+  'Emre Solak',
+  'Seo-jun Park',
+  'Gabriel Moreau',
 )

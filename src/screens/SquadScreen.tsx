@@ -5,10 +5,12 @@ import { OvrBadge } from '../components/ui/OvrBadge'
 import { Meter } from '../components/ui/Bars'
 import { Tappable } from '../components/ui/Tappable'
 import { PlayerSheet, type SheetAction } from '../components/PlayerSheet'
+import { SideToggle } from '../components/SideToggle'
 import { club } from '../data/clubs'
+import { team, otherSide } from '../data/teams'
 import { lineOf } from '../lib/chemistry'
 import { bestSlotFor, weakestSlot } from '../lib/lineup'
-import { useSquad, BENCH_SIZE } from '../store/useSquad'
+import { useSquad, BENCH_SIZE, XI_SIZE } from '../store/useSquad'
 import type { Line, Player } from '../types'
 
 type Filter = 'ALL' | Line
@@ -31,17 +33,23 @@ function SearchIcon() {
 }
 
 /**
- * The database. Filter chips + search narrow the list; membership tags on the
- * right make "who is already in my squad" answerable without leaving the row.
+ * The database — one shared pool, two teams drawing from it. Filter chips +
+ * search narrow the list; membership tags on the right say who is already in
+ * the active squad, and who the opposition has taken.
  */
 export function SquadScreen() {
   const roster = useSquad((s) => s.roster)
-  const lineup = useSquad((s) => s.lineup)
-  const bench = useSquad((s) => s.bench)
-  const formationId = useSquad((s) => s.formationId)
+  const activeSide = useSquad((s) => s.activeSide)
+  const lineup = useSquad((s) => s[s.activeSide].lineup)
+  const bench = useSquad((s) => s[s.activeSide].bench)
+  const formationId = useSquad((s) => s[s.activeSide].formationId)
+  const rivalLineup = useSquad((s) => s[s.activeSide === 'home' ? 'away' : 'home'].lineup)
+  const rivalBench = useSquad((s) => s[s.activeSide === 'home' ? 'away' : 'home'].bench)
   const assignToSlot = useSquad((s) => s.assignToSlot)
   const addToBench = useSquad((s) => s.addToBench)
   const removeFromBench = useSquad((s) => s.removeFromBench)
+  const meta = team(activeSide)
+  const rival = team(otherSide(activeSide))
 
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('ALL')
@@ -50,6 +58,10 @@ export function SquadScreen() {
 
   const inXI = useMemo(() => new Set(lineup.filter(Boolean) as string[]), [lineup])
   const onBench = useMemo(() => new Set(bench.filter(Boolean) as string[]), [bench])
+  const withRival = useMemo(
+    () => new Set([...rivalLineup, ...rivalBench].filter(Boolean) as string[]),
+    [rivalLineup, rivalBench],
+  )
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -82,21 +94,21 @@ export function SquadScreen() {
 
     const out: SheetAction[] = [
       {
-        label: starting ? 'Move to best slot' : 'To starting XI',
+        label: starting ? 'Move to best slot' : `To ${meta.label.toLowerCase()} seven`,
         hint: starting ? 'reshuffle in place' : 'replaces the weakest starter',
         primary: true,
         onTap: () => {
-          assignToSlot(p.id, target)
+          assignToSlot(activeSide, p.id, target)
           setOpenId(null)
         },
       },
       {
-        label: benched ? 'Off the bench' : 'To bench',
+        label: benched ? 'Off the bench' : `To ${meta.label.toLowerCase()} bench`,
         hint: benched ? 'back to reserves' : benchFull ? `bench is full (${BENCH_SIZE})` : undefined,
         disabled: benchFull,
         onTap: () => {
-          if (benched) removeFromBench(benchIndexOf(p.id))
-          else addToBench(p.id)
+          if (benched) removeFromBench(activeSide, benchIndexOf(p.id))
+          else addToBench(activeSide, p.id)
           setOpenId(null)
         },
       },
@@ -106,8 +118,13 @@ export function SquadScreen() {
 
   return (
     <div className="px-4 pb-6">
+      <SideToggle
+        className="pb-3"
+        hint={`Everything on this screen moves players in and out of ${meta.name}.`}
+      />
+
       {/* controls */}
-      <div className="panel sticky top-[6.5rem] z-20 space-y-2.5 px-3 py-3">
+      <div className="panel sticky top-[7.25rem] z-20 space-y-2.5 px-3 py-3">
         <label className="flex items-center gap-2 rounded-xl border border-hairline bg-base/60 px-3 py-2 focus-within:border-lime-500/60">
           <span className="text-ink-faint">
             <SearchIcon />
@@ -171,7 +188,11 @@ export function SquadScreen() {
         </div>
 
         <p className="text-2xs text-ink-faint">
-          {rows.length} players · {inXI.size} starting · {onBench.size}/{BENCH_SIZE} on the bench
+          {rows.length} players ·{' '}
+          <span style={{ color: meta.accent }}>
+            {inXI.size}/{XI_SIZE} starting
+          </span>{' '}
+          · {onBench.size}/{BENCH_SIZE} on the {meta.label.toLowerCase()} bench
         </p>
       </div>
 
@@ -190,10 +211,11 @@ export function SquadScreen() {
               <Tappable
                 ariaLabel={`Open ${p.name}`}
                 onTap={() => setOpenId(p.id)}
+                ripple={`color-mix(in srgb, ${meta.accent} 42%, transparent)`}
                 className="glass tap flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left"
                 style={
                   starting
-                    ? { borderColor: 'color-mix(in srgb, var(--color-lime-500) 45%, transparent)' }
+                    ? { borderColor: `color-mix(in srgb, ${meta.accent} 55%, transparent)` }
                     : undefined
                 }
               >
@@ -212,13 +234,28 @@ export function SquadScreen() {
                 </span>
 
                 {starting && (
-                  <span className="display shrink-0 rounded bg-lime-500/15 px-1.5 text-2xs tracking-wider text-lime-200 uppercase ring-1 ring-lime-500/40">
-                    XI
+                  <span
+                    className="display shrink-0 rounded px-1.5 text-2xs tracking-wider uppercase"
+                    style={{
+                      background: `color-mix(in srgb, ${meta.accent} 16%, transparent)`,
+                      color: meta.accentSoft,
+                      boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${meta.accent} 45%, transparent)`,
+                    }}
+                  >
+                    {meta.label}
                   </span>
                 )}
                 {!starting && benched && (
                   <span className="display shrink-0 rounded bg-surface-3 px-1.5 text-2xs tracking-wider text-ink-muted uppercase ring-1 ring-hairline">
                     Sub
+                  </span>
+                )}
+                {!starting && !benched && withRival.has(p.id) && (
+                  <span
+                    className="display shrink-0 rounded px-1.5 text-2xs tracking-wider uppercase"
+                    style={{ color: rival.accent, opacity: 0.85 }}
+                  >
+                    {rival.label}
                   </span>
                 )}
                 <OvrBadge ovr={p.ovr} size={32} />
@@ -239,6 +276,11 @@ export function SquadScreen() {
         player={open}
         membership={
           open && inXI.has(open.id) ? 'xi' : open && onBench.has(open.id) ? 'bench' : 'reserve'
+        }
+        note={
+          open && withRival.has(open.id)
+            ? `Both teams draw from one pool — ${open.name} is currently in the ${rival.name} squad. Naming him here leaves him in both.`
+            : undefined
         }
         actions={open ? actionsFor(open) : []}
       />

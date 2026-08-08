@@ -1,164 +1,104 @@
-import type { Formation, Pos, Slot } from '../types'
+import type { Formation, Pos, Slot, Vec } from '../types'
 
-/* Slots are authored in canonical order: GK, then each band from own goal to
- * opponent goal, left → right inside a band. Switching formation keeps a
- * player's canonical index, so the XI slides into the new shape instead of
- * being rebuilt (see `autoFit` in lib/lineup for optimal re-assignment). */
+/* Seven-a-side shapes. Slots are authored in canonical order: GK, then each band
+ * from own goal to opponent goal, left → right inside a band. Switching
+ * formation keeps a player's canonical index, so the seven slide into the new
+ * shape instead of being rebuilt (see `autoFit` in lib/lineup for optimal
+ * re-assignment). Coordinates are team-local: y = 93 is your own goal line,
+ * y = 0 the opponent's. The pitch maps them onto its half per side. */
 function shape(rows: Array<[Pos, number, number]>): Slot[] {
   return rows.map(([pos, x, y], i) => ({ i, pos, x, y }))
 }
 
 export const FORMATIONS: Formation[] = [
   {
-    id: '433',
-    name: '4-3-3',
-    shape: 'Attack',
-    blurb: 'Wide front three, single pivot. Best with quick wingers.',
-    slots: shape([
-      ['GK', 50, 93],
-      ['LB', 12, 73],
-      ['CB', 35, 79],
-      ['CB', 65, 79],
-      ['RB', 88, 73],
-      ['CDM', 50, 58],
-      ['CM', 27, 45],
-      ['CM', 73, 45],
-      ['LW', 15, 22],
-      ['ST', 50, 13],
-      ['RW', 85, 22],
-    ]),
-  },
-  {
-    id: '442',
-    name: '4-4-2',
+    id: '231',
+    name: '2-3-1',
     shape: 'Balanced',
-    blurb: 'Two flat banks of four. Reliable shape, strong out of possession.',
+    blurb: 'The 7s default. Three across the middle, one runner in behind.',
     slots: shape([
       ['GK', 50, 93],
-      ['LB', 11, 73],
-      ['CB', 36, 79],
-      ['CB', 64, 79],
-      ['RB', 89, 73],
-      ['LM', 11, 48],
-      ['CM', 36, 53],
-      ['CM', 64, 53],
-      ['RM', 89, 48],
-      ['ST', 37, 16],
-      ['ST', 63, 16],
+      ['CB', 30, 74],
+      ['CB', 70, 74],
+      ['LM', 17, 47],
+      ['CM', 50, 52],
+      ['RM', 83, 47],
+      ['ST', 50, 22],
     ]),
   },
   {
-    id: '4231',
-    name: '4-2-3-1',
-    shape: 'Control',
-    blurb: 'Double pivot behind a free number 10. The modern default.',
-    slots: shape([
-      ['GK', 50, 93],
-      ['LB', 11, 73],
-      ['CB', 36, 79],
-      ['CB', 64, 79],
-      ['RB', 89, 73],
-      ['CDM', 34, 60],
-      ['CDM', 66, 60],
-      ['LM', 14, 38],
-      ['CAM', 50, 34],
-      ['RM', 86, 38],
-      ['ST', 50, 13],
-    ]),
-  },
-  {
-    id: '41212',
-    name: '4-1-2-1-2',
+    id: '222',
+    name: '2-2-2',
     shape: 'Narrow',
-    blurb: 'Midfield diamond. Overloads the centre, concedes the flanks.',
+    blurb: 'Two banks and a front pair. Short passing lanes, thin flanks.',
     slots: shape([
       ['GK', 50, 93],
-      ['LB', 11, 73],
-      ['CB', 36, 79],
-      ['CB', 64, 79],
-      ['RB', 89, 73],
-      ['CDM', 50, 62],
-      ['CM', 24, 47],
-      ['CM', 76, 47],
-      ['CAM', 50, 33],
-      ['ST', 37, 14],
-      ['ST', 63, 14],
+      ['CB', 31, 76],
+      ['CB', 69, 76],
+      ['CM', 30, 51],
+      ['CM', 70, 51],
+      ['ST', 34, 23],
+      ['ST', 66, 23],
     ]),
   },
   {
-    id: '352',
-    name: '3-5-2',
-    shape: 'Wing-backs',
-    blurb: 'Back three with flying wing-backs. Demands stamina on the flanks.',
+    id: '321',
+    name: '3-2-1',
+    shape: 'Defensive',
+    blurb: 'Back three, double pivot, lone striker. Nothing gets through.',
     slots: shape([
       ['GK', 50, 93],
-      ['CB', 26, 79],
+      ['CB', 22, 76],
+      ['CB', 50, 80],
+      ['CB', 78, 76],
+      ['CDM', 33, 52],
+      ['CDM', 67, 52],
+      ['ST', 50, 23],
+    ]),
+  },
+  {
+    id: '132',
+    name: '1-3-2',
+    shape: 'Attacking',
+    blurb: 'One sweeper behind a busy three. Two forwards, all-in.',
+    slots: shape([
+      ['GK', 50, 93],
+      ['CB', 50, 77],
+      ['LM', 18, 50],
+      ['CAM', 50, 54],
+      ['RM', 82, 50],
+      ['ST', 33, 22],
+      ['ST', 67, 22],
+    ]),
+  },
+  {
+    id: '240',
+    name: '2-4-0',
+    shape: 'Wide press',
+    blurb: 'No fixed striker. Four rotate high and hunt the ball in packs.',
+    slots: shape([
+      ['GK', 50, 93],
+      ['CB', 32, 77],
+      ['CB', 68, 77],
+      ['LM', 16, 45],
+      ['CAM', 38, 34],
+      ['CAM', 62, 34],
+      ['RM', 84, 45],
+    ]),
+  },
+  {
+    id: '312',
+    name: '3-1-2',
+    shape: 'Wing overload',
+    blurb: 'Back three, single pivot, two wide forwards stretching the box.',
+    slots: shape([
+      ['GK', 50, 93],
+      ['CB', 24, 77],
       ['CB', 50, 81],
-      ['CB', 74, 79],
-      ['LWB', 8, 52],
-      ['CM', 30, 46],
-      ['CDM', 50, 62],
-      ['CM', 70, 46],
-      ['RWB', 92, 52],
-      ['ST', 37, 15],
-      ['ST', 63, 15],
-    ]),
-  },
-  {
-    id: '343',
-    name: '3-4-3',
-    shape: 'High risk',
-    blurb: 'Three at the back, three up top. Maximum press, maximum exposure.',
-    slots: shape([
-      ['GK', 50, 93],
-      ['CB', 26, 79],
-      ['CB', 50, 81],
-      ['CB', 74, 79],
-      ['LM', 12, 50],
-      ['CM', 36, 54],
-      ['CM', 64, 54],
-      ['RM', 88, 50],
-      ['LW', 17, 20],
-      ['ST', 50, 13],
-      ['RW', 83, 20],
-    ]),
-  },
-  {
-    id: '541',
-    name: '5-4-1',
-    shape: 'Low block',
-    blurb: 'Five across the back. Absorb pressure, break on the counter.',
-    slots: shape([
-      ['GK', 50, 93],
-      ['LWB', 8, 68],
-      ['CB', 27, 80],
-      ['CB', 50, 82],
-      ['CB', 73, 80],
-      ['RWB', 92, 68],
-      ['LM', 13, 48],
-      ['CM', 37, 52],
-      ['CM', 63, 52],
-      ['RM', 87, 48],
-      ['ST', 50, 14],
-    ]),
-  },
-  {
-    id: '451',
-    name: '4-5-1',
-    shape: 'Congest',
-    blurb: 'Packed midfield five. Wins the second ball, isolates the striker.',
-    slots: shape([
-      ['GK', 50, 93],
-      ['LB', 11, 73],
-      ['CB', 36, 79],
-      ['CB', 64, 79],
-      ['RB', 89, 73],
-      ['CDM', 50, 60],
-      ['LM', 12, 46],
-      ['CM', 35, 48],
-      ['CM', 65, 48],
-      ['RM', 88, 46],
-      ['ST', 50, 14],
+      ['CB', 76, 77],
+      ['CM', 50, 53],
+      ['LW', 27, 24],
+      ['RW', 73, 24],
     ]),
   },
 ]
@@ -169,39 +109,53 @@ export function getFormation(id: string): Formation {
   return FORMATION_MAP.get(id) ?? (FORMATIONS[0] as Formation)
 }
 
+/** Every shape in the game fields the same number of players. */
+export const XI_SIZE = 7
+
 export type Link = readonly [a: number, b: number]
 
-const LINK_CACHE = new Map<string, Link[]>()
+/** Wider than the eleven-a-side radius: seven players spread over the same
+ *  half, so the web needs a longer reach to stay legible. */
+const LINK_RADIUS = 42
 
 /**
- * Chemistry links are derived from the shape itself: every slot connects to its
- * three nearest neighbours inside a radius. Pairs are de-duplicated, so a shape
- * yields ~18-22 links — dense enough to read as a web, sparse enough to trace.
+ * Chemistry links are derived from where the players actually stand: every slot
+ * connects to its three nearest neighbours inside a radius. Pairs are
+ * de-duplicated. Because this takes raw coordinates rather than a formation id,
+ * links follow a player dragged to a custom position.
  */
-export function linksFor(formationId: string): Link[] {
-  const cached = LINK_CACHE.get(formationId)
-  if (cached) return cached
-
-  const { slots } = getFormation(formationId)
+export function linksForPositions(points: Array<Vec | null | undefined>): Link[] {
   const seen = new Set<string>()
   const out: Link[] = []
 
-  for (const a of slots) {
-    const near = slots
-      .filter((b) => b.i !== a.i)
-      .map((b) => ({ b, d: Math.hypot(a.x - b.x, (a.y - b.y) * 1.15) }))
+  points.forEach((a, ai) => {
+    if (!a) return
+    const near = points
+      .map((b, bi) => ({ b, bi }))
+      .filter((n): n is { b: Vec; bi: number } => Boolean(n.b) && n.bi !== ai)
+      .map(({ b, bi }) => ({ bi, d: Math.hypot(a.x - b.x, (a.y - b.y) * 1.15) }))
       .sort((p, q) => p.d - q.d)
       .slice(0, 3)
-      .filter((n) => n.d < 36)
+      .filter((n) => n.d < LINK_RADIUS)
 
-    for (const { b } of near) {
-      const key = a.i < b.i ? `${a.i}-${b.i}` : `${b.i}-${a.i}`
+    for (const { bi } of near) {
+      const key = ai < bi ? `${ai}-${bi}` : `${bi}-${ai}`
       if (seen.has(key)) continue
       seen.add(key)
-      out.push(a.i < b.i ? [a.i, b.i] : [b.i, a.i])
+      out.push(ai < bi ? [ai, bi] : [bi, ai])
     }
-  }
+  })
 
-  LINK_CACHE.set(formationId, out)
   return out
+}
+
+/** Where slot `i` actually stands: its custom position, else the shape default. */
+export function slotPoints(
+  formationId: string,
+  positions?: Array<Vec | null> | null,
+): Vec[] {
+  return getFormation(formationId).slots.map((s) => {
+    const custom = positions?.[s.i]
+    return custom ? { x: custom.x, y: custom.y } : { x: s.x, y: s.y }
+  })
 }

@@ -4,7 +4,7 @@
 @import '@fontsource-variable/inter';
 
 /* =============================================================================
-   DESIGN TOKENS  —  "ULTRA XI" dark esports football system
+   DESIGN TOKENS  —  "ULTRA 7S" dark esports football system
    -----------------------------------------------------------------------------
    Layer 1  neutrals + elevated surfaces (dark-mode-design: elevation via
             lighter surfaces, never shadows alone)
@@ -34,6 +34,16 @@
   --color-lime-500: #93dc12;
   --color-lime-600: #6fae05;
   --color-lime-700: #4d7a06;
+
+  /* ---- away team: warm red/orange, the counterweight to lime ----
+     away-200/300 are the text tones (>= 4.5:1 on surface-1/2);
+     400/500/600 are fills, glows and pitch furniture. */
+  --color-away-200: #ffd8c4;
+  --color-away-300: #ffa274;
+  --color-away-400: #ff6a3d;
+  --color-away-500: #ef4a1d;
+  --color-away-600: #b83510;
+  --color-away-700: #7d2409;
 
   /* ---- brand: gold (ratings, prestige) ---- */
   --color-gold-200: #ffeebb;

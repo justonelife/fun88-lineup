@@ -50,6 +50,8 @@ interface Props {
   chem?: number
   /** Where the player currently lives, shown as a membership tag. */
   membership?: 'xi' | 'bench' | 'reserve'
+  /** Context line above the actions — used when the sheet is read-only. */
+  note?: string
   actions: SheetAction[]
 }
 
@@ -64,7 +66,11 @@ function Fact({ label, value, tone }: { label: string; value: string; tone?: str
   )
 }
 
-const MEMBERSHIP_LABEL = { xi: 'Starting XI', bench: 'On the bench', reserve: 'Reserve' } as const
+const MEMBERSHIP_LABEL = {
+  xi: 'Starting seven',
+  bench: 'On the bench',
+  reserve: 'Reserve',
+} as const
 
 /**
  * One canonical player detail surface, reused by the pitch, the bench and the
@@ -79,6 +85,7 @@ export function PlayerSheet({
   fit,
   chem,
   membership,
+  note,
   actions,
 }: Props) {
   return (
@@ -147,6 +154,8 @@ export function PlayerSheet({
               <StatBar key={key} label={label} value={player.stats[key]} delay={i * 0.045} />
             ))}
           </div>
+
+          {note && <p className="measure mt-3 text-xs text-ink-muted">{note}</p>}
 
           {/* actions */}
           <div className="mt-4 grid gap-2">

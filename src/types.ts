@@ -17,6 +17,15 @@ export type Pos =
 
 export type Line = 'GK' | 'DEF' | 'MID' | 'FWD'
 
+/** The two editable teams of a versus board. */
+export type Side = 'home' | 'away'
+
+/** Normalised team-local pitch coordinates, 0-100. */
+export interface Vec {
+  x: number
+  y: number
+}
+
 export interface Stats {
   pac: number
   sho: number
@@ -53,10 +62,10 @@ export interface Player {
 }
 
 export interface Slot {
-  /** Canonical index 0..10 — 0 is always the goalkeeper. */
+  /** Canonical index 0..6 — 0 is always the goalkeeper (7-a-side). */
   i: number
   pos: Pos
-  /** Normalised pitch coordinates, 0-100. x: left→right, y: 0 = attacking end. */
+  /** Team-local coordinates, 0-100. x: left→right, y: 0 = attacking end. */
   x: number
   y: number
 }
@@ -95,11 +104,15 @@ export interface PlayerRating {
 }
 
 export interface MatchResult {
-  opponent: string
+  homeName: string
+  awayName: string
   homeGoals: number
   awayGoals: number
   events: MatchEvent[]
+  /** Home XI — full consequences (rating, stamina, ovr). */
   ratings: PlayerRating[]
+  /** Away XI — same shape, applied as stamina + ovr only. */
+  awayRatings: PlayerRating[]
   possession: number
   shots: number
   shotsAgainst: number
