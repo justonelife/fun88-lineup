@@ -61,7 +61,19 @@
   --color-danger: #ff4f64;
   --color-info: #4cc9f0;
 
-  /* ---- pitch ---- */
+  /* ---- FIFA-Online board chrome: deep navy, the only large cool surface ---- */
+  --color-navy-900: #0a0f1d;
+  --color-navy-800: #111731;
+  --color-navy-700: #1a2142;
+
+  /* ---- grass: the one large saturated area in the whole app ---- */
+  --color-grass-400: #6f9a45;
+  --color-grass-500: #5b8438;
+  --color-grass-600: #4a6d2c;
+  --color-grass-700: #385221;
+  --color-grass-line: rgba(238, 248, 232, 0.5);
+
+  /* ---- pitch (flat versus board) ---- */
   --color-pitch-900: #03130b;
   --color-pitch-800: #061c11;
   --color-pitch-700: #0a2a1a;
@@ -253,6 +265,46 @@
   /* readable-measure: body copy never exceeds ~65ch */
   .measure {
     max-width: 62ch;
+  }
+
+  /* --- Tier sheen for the top two card frames -------------------------------
+     A single transform+opacity sweep, so it stays on the compositor and costs
+     nothing during a drag. Von Restorff: gold and platinum only — if every card
+     shimmered, none of them would. The global reduced-motion block below kills
+     the animation, which parks it at opacity 0. */
+  .card-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(
+      100deg,
+      transparent 38%,
+      rgba(255, 255, 255, 0.5) 50%,
+      transparent 62%
+    );
+    mix-blend-mode: screen;
+    will-change: transform, opacity;
+    animation: card-shimmer 5.2s var(--ease-out-quint) infinite;
+  }
+}
+
+@keyframes card-shimmer {
+  0% {
+    transform: translateX(-150%) skewX(-16deg);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.85;
+  }
+  30% {
+    transform: translateX(150%) skewX(-16deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(150%) skewX(-16deg);
+    opacity: 0;
   }
 }
 

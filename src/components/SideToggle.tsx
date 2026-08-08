@@ -60,16 +60,23 @@ export function SideToggle({ className = '', hint }: Props) {
               >
                 {t.meta.short}
               </span>
+              {/* On a phone this control shares its row with the view switch, so
+                  the club name — already the largest thing in the header — drops
+                  out and only the job of the control (which side) survives. */}
               <span className="min-w-0 flex-1">
                 <span
-                  className="display block text-2xs tracking-widest uppercase"
+                  className="display block text-2xs tracking-widest uppercase sm:text-2xs"
                   style={{ opacity: active ? 0.72 : 1, color: active ? undefined : 'var(--color-ink-faint)' }}
                 >
                   {t.meta.label}
                 </span>
-                <span className="display block truncate text-sm leading-none">{t.meta.name}</span>
+                <span className="display hidden truncate text-sm leading-none sm:block">
+                  {t.meta.name}
+                </span>
               </span>
-              <span className="display tnum shrink-0 text-base leading-none">{t.ovr.total}</span>
+              {/* `text-base` would resolve to the --color-base swatch, not the
+                  16px step — the theme owns both names. Ask for the size. */}
+              <span className="display tnum shrink-0 text-[1rem] leading-none">{t.ovr.total}</span>
             </Tappable>
           )
         })}

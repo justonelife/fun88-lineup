@@ -51,7 +51,7 @@ interface Props {
 export function TabBar({ tab, onTab }: Props) {
   return (
     <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-base/90 backdrop-blur-xl">
-      <ul className="mx-auto flex max-w-3xl items-stretch justify-around px-2">
+      <ul className="mx-auto flex max-w-5xl items-stretch justify-around px-2">
         {(Object.keys(LABELS) as Tab[]).map((t) => {
           const active = tab === t
           return (

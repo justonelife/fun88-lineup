@@ -1,28 +1,26 @@
 import { memo } from 'react'
+import { tierOf, type Tier } from '../../lib/tiers'
 
-export type Tier = 'elite' | 'gold' | 'silver' | 'bronze'
+/* The tier ladder itself lives in lib/tiers so the pitch cards, the bench cards
+ * and this badge can never drift apart. Re-exported here because every screen
+ * already reaches for the badge when it needs a rating. */
+export { tierOf }
+export type { Tier }
 
-export function tierOf(ovr: number): Tier {
-  if (ovr >= 88) return 'elite'
-  if (ovr >= 82) return 'gold'
-  if (ovr >= 75) return 'silver'
-  return 'bronze'
-}
-
-/* Von Restorff: only genuinely elite ratings get the gold/glow treatment, so
- * the eye lands on the two or three players that actually carry the team. */
+/* Von Restorff: only genuinely elite ratings get the glow treatment, so the eye
+ * lands on the two or three players that actually carry the team. */
 const TIER_STYLE: Record<Tier, { ring: string; text: string; bg: string; glow: string }> = {
-  elite: {
+  platinum: {
+    ring: 'rgba(196,240,255,.92)',
+    text: '#e6f8ff',
+    bg: 'linear-gradient(160deg, rgba(150,224,255,.3), rgba(60,140,190,.08))',
+    glow: '0 0 14px -2px rgba(150,224,255,.75)',
+  },
+  gold: {
     ring: 'var(--color-gold-300)',
     text: 'var(--color-gold-200)',
     bg: 'linear-gradient(160deg, rgba(247,201,72,.28), rgba(219,165,31,.08))',
-    glow: '0 0 14px -2px rgba(247,201,72,.75)',
-  },
-  gold: {
-    ring: 'var(--color-lime-400)',
-    text: 'var(--color-lime-200)',
-    bg: 'linear-gradient(160deg, rgba(184,241,60,.22), rgba(111,174,5,.06))',
-    glow: '0 0 12px -4px rgba(184,241,60,.6)',
+    glow: '0 0 12px -3px rgba(247,201,72,.7)',
   },
   silver: {
     ring: 'rgba(151,167,188,.85)',
@@ -48,7 +46,7 @@ function OvrBadgeImpl({ ovr, size = 28, label }: Props) {
   const s = TIER_STYLE[tierOf(ovr)]
   return (
     <span
-      className="display inline-flex flex-col items-center justify-center rounded-full tnum leading-none"
+      className="display tnum inline-flex flex-col items-center justify-center rounded-full leading-none"
       style={{
         width: size,
         height: size,

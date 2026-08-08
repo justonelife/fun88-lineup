@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Pitch, type PitchMode } from '../components/Pitch'
-import { BenchStrip } from '../components/BenchStrip'
+import { Pitch3D } from '../components/Pitch3D'
+import { BenchPanel } from '../components/BenchPanel'
 import { FormationSelector } from '../components/FormationSelector'
 import { SideToggle } from '../components/SideToggle'
 import { PlayerSheet, type SheetAction } from '../components/PlayerSheet'
@@ -11,9 +12,15 @@ import { Avatar } from '../components/ui/Avatar'
 import { OvrBadge } from '../components/ui/OvrBadge'
 import { resolve } from '../lib/chemistry'
 import { shortName } from '../lib/lineup'
+import { useMediaQuery } from '../lib/useMediaQuery'
 import { useVersus } from '../store/derived'
 import { useSquad } from '../store/useSquad'
 import type { Player, Side, Vec } from '../types'
+
+type View = 'lineup' | 'versus'
+
+/** Which slot or reserve the detail sheet is currently describing. */
+type SheetTarget = { kind: 'slot'; side: Side; slot: number } | { kind: 'bench'; index: number }
 
 /** Transient bottom toast — confirms a mutation without stealing focus. */
 function Toast({ message }: { message: string | null }) {
@@ -36,14 +43,51 @@ function Toast({ message }: { message: string | null }) {
   )
 }
 
+/** LINEUP | VERSUS. Two readings of the same squad, never two sources of truth. */
+function ViewToggle({ view, onView }: { view: View; onView: (v: View) => void }) {
+  return (
+    <div role="tablist" aria-label="Board view" className="panel-inset flex shrink-0 gap-0.5 p-0.5">
+      {(['lineup', 'versus'] as View[]).map((v) => {
+        const active = view === v
+        return (
+          <Tappable
+            key={v}
+            role="tab"
+            ariaSelected={active}
+            ariaLabel={v === 'lineup' ? 'Lineup board' : 'Versus board'}
+            onTap={() => onView(v)}
+            className="relative rounded-lg px-3 py-1.5"
+            style={{ color: active ? '#08120a' : 'var(--color-ink-muted)' }}
+          >
+            {active && (
+              <motion.span
+                layoutId="view-active"
+                className="absolute inset-0 -z-10 rounded-lg"
+                style={{
+                  background:
+                    'linear-gradient(150deg, var(--color-lime-400), var(--color-lime-600))',
+                }}
+                transition={{ type: 'spring', stiffness: 460, damping: 36 }}
+              />
+            )}
+            <span className="display text-2xs tracking-[0.18em] uppercase">{v}</span>
+          </Tappable>
+        )
+      })}
+    </div>
+  )
+}
+
 /**
- * The versus board. One pitch, two squads, one active side: every control on
- * this screen edits whichever team the HOME | AWAY switch points at, and the
- * opposing seven stay on screen for comparison.
+ * The team-management board. LINEUP is the default: one squad on a 2.5D pitch
+ * with the substitutes beside it (desktop) or under it (phone), so "who is on"
+ * and "who is waiting" are answered in the same glance. VERSUS keeps the
+ * mirrored two-squad board for comparing shapes head to head.
  */
 export function LineupScreen() {
   const { home, away, activeSide } = useVersus()
   const active = activeSide === 'home' ? home : away
+  const wide = useMediaQuery('(min-width: 64rem)')
 
   const setActiveSide = useSquad((s) => s.setActiveSide)
   const swapSlots = useSquad((s) => s.swapSlots)
@@ -51,12 +95,14 @@ export function LineupScreen() {
   const assignToSlot = useSquad((s) => s.assignToSlot)
   const clearSlot = useSquad((s) => s.clearSlot)
   const addToBench = useSquad((s) => s.addToBench)
+  const removeFromBench = useSquad((s) => s.removeFromBench)
   const autoFitLineup = useSquad((s) => s.autoFitLineup)
   const setPosition = useSquad((s) => s.setPosition)
   const resetPositions = useSquad((s) => s.resetPositions)
 
+  const [view, setView] = useState<View>('lineup')
   const [mode, setMode] = useState<PitchMode>({ kind: 'idle' })
-  const [sheet, setSheet] = useState<{ side: Side; slot: number } | null>(null)
+  const [sheet, setSheet] = useState<SheetTarget | null>(null)
   const [pickerSlot, setPickerSlot] = useState<number | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
@@ -67,12 +113,13 @@ export function LineupScreen() {
 
   const idle = () => setMode({ kind: 'idle' })
 
+  /** One tap on a starter. Meaning depends on the armed mode, never on the view. */
   const onTapToken = (side: Side, slot: number) => {
-    // The opposing side is inspectable but never editable — one tap opens the
-    // read-only sheet, the switch above is the way in.
+    // The opposing side is inspectable but never editable — the switch above is
+    // the only way in.
     if (side !== activeSide) {
       const other = side === 'home' ? home : away
-      if (other.lineup[slot]) setSheet({ side, slot })
+      if (other.lineup[slot]) setSheet({ kind: 'slot', side, slot })
       else flash(`Switch to ${other.meta.label} to edit that side`)
       return
     }
@@ -105,7 +152,7 @@ export function LineupScreen() {
       setPickerSlot(slot)
       return
     }
-    setSheet({ side, slot })
+    setSheet({ kind: 'slot', side, slot })
   }
 
   const onLongPressSlot = (slot: number) => {
@@ -132,14 +179,46 @@ export function LineupScreen() {
     )
   }
 
-  // ── sheets ────────────────────────────────────────────────────────────────
-  const sheetTeam = sheet ? (sheet.side === 'home' ? home : away) : undefined
-  const sheetPlayer = sheet && sheetTeam ? resolve(sheetTeam.roster, sheetTeam.lineup[sheet.slot]) : undefined
-  const sheetSlotDef = sheet && sheetTeam ? sheetTeam.formation.slots[sheet.slot] : undefined
-  const sheetEditable = sheet?.side === activeSide
+  // ── detail sheet ──────────────────────────────────────────────────────────
+  const sheetTeam = sheet ? (sheet.kind === 'slot' ? (sheet.side === 'home' ? home : away) : active) : undefined
+  const sheetPlayer =
+    sheet && sheetTeam
+      ? sheet.kind === 'slot'
+        ? resolve(sheetTeam.roster, sheetTeam.lineup[sheet.slot])
+        : resolve(sheetTeam.roster, sheetTeam.bench[sheet.index])
+      : undefined
+  const sheetSlotDef =
+    sheet?.kind === 'slot' && sheetTeam ? sheetTeam.formation.slots[sheet.slot] : undefined
+  const sheetEditable = sheet?.kind === 'bench' || sheet?.side === activeSide
 
   const actions: SheetAction[] = useMemo(() => {
     if (!sheet || !sheetPlayer || !sheetEditable) return []
+
+    if (sheet.kind === 'bench') {
+      const index = sheet.index
+      return [
+        {
+          label: 'Bring on',
+          hint: 'then tap the starter coming off',
+          primary: true,
+          disabled: active.subsLeft <= 0,
+          onTap: () => {
+            setMode({ kind: 'sub', benchIndex: index })
+            setSheet(null)
+          },
+        },
+        {
+          label: 'Off the bench',
+          hint: 'frees the seat',
+          onTap: () => {
+            removeFromBench(activeSide, index)
+            setSheet(null)
+            flash(`${shortName(sheetPlayer.name)} left out`)
+          },
+        },
+      ]
+    }
+
     const slot = sheet.slot
     return [
       {
@@ -171,7 +250,18 @@ export function LineupScreen() {
         },
       },
     ]
-  }, [sheet, sheetPlayer, sheetEditable, activeSide, clearSlot, addToBench, autoFitLineup, flash])
+  }, [
+    sheet,
+    sheetPlayer,
+    sheetEditable,
+    activeSide,
+    active.subsLeft,
+    clearSlot,
+    addToBench,
+    removeFromBench,
+    autoFitLineup,
+    flash,
+  ])
 
   const pickerOptions = useMemo(
     () => active.bench.map((id) => resolve(active.roster, id)).filter((p): p is Player => Boolean(p)),
@@ -182,31 +272,73 @@ export function LineupScreen() {
 
   const banner =
     mode.kind === 'swap'
-      ? `Swap mode — tap another ${active.meta.label.toLowerCase()} starter, or drag a token onto one`
+      ? `Swap mode — tap another ${active.meta.label.toLowerCase()} starter, or drag a card onto one`
       : mode.kind === 'sub'
         ? 'Substitution armed — tap the starter coming off'
         : null
 
+  const bench = (
+    <BenchPanel
+      team={active}
+      mode={mode}
+      onSelectBench={onSelectBench}
+      onInspectBench={(index) => setSheet({ kind: 'bench', index })}
+      layout={wide && view === 'lineup' ? 'column' : 'rail'}
+    />
+  )
+
   return (
     <div className="pb-4">
-      <SideToggle
-        className="px-4 pb-3"
-        hint={`Editing ${active.meta.name} — the ${
-          activeSide === 'home' ? away.meta.name : home.meta.name
-        } seven are tap-to-inspect only.`}
-      />
-
-      <FormationSelector />
-
-      <div className="mt-3 px-4">
-        <Pitch
-          mode={mode}
-          onTapToken={onTapToken}
-          onLongPressSlot={onLongPressSlot}
-          onDropSwap={onDropSwap}
-          onDropFree={onDropFree}
-        />
+      {/* One ViewToggle instance, re-ordered by CSS: on a phone it is a board tab
+          strip on its own line (the side switch needs the full width to stay
+          readable); from `sm` the two controls share a row. */}
+      <div className="flex flex-wrap items-start gap-2 px-4 pb-3 sm:flex-nowrap sm:gap-3">
+        <div className="order-1 flex w-full justify-end sm:order-2 sm:w-auto">
+          <ViewToggle view={view} onView={setView} />
+        </div>
+        <SideToggle className="order-2 w-full min-w-0 sm:order-1 sm:flex-1" />
       </div>
+
+      {view === 'lineup' ? (
+        /* Desktop: pitch ~60% / bench ~40%, both full height, nothing scrolls
+         * out of reach. Phone: the pitch is the hero and the bench is a rail
+         * directly under it — a 375px column split in two would make the pitch
+         * unreadable, and the rail keeps every reserve one thumb-swipe away. */
+        /* `minmax(0,1fr)` on the single mobile column matters: an implicit `auto`
+           track is floored at the widest item's min-content, and one nowrap
+           blurb is enough to push the board off the side of a phone. */
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 px-4 lg:h-[min(64vh,40rem)] lg:grid-cols-[minmax(0,1fr)_21rem] lg:grid-rows-[minmax(0,1fr)_auto] lg:gap-4">
+          {/* Source order is the phone order: pitch, bench, formation. The grid
+              placements below only kick in from lg, where the bench becomes a
+              full-height column beside the board. */}
+          <div className="h-[min(42vh,26rem)] min-h-0 min-w-0 lg:col-start-1 lg:row-start-1 lg:h-auto">
+            <Pitch3D
+              team={active}
+              mode={mode}
+              onTapSlot={(slot) => onTapToken(activeSide, slot)}
+              onLongPressSlot={onLongPressSlot}
+              onDropSwap={onDropSwap}
+              onDropFree={onDropFree}
+            />
+          </div>
+          <div className="min-h-0 min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">{bench}</div>
+          <div className="min-w-0 lg:col-start-1 lg:row-start-2">
+            <FormationSelector />
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 px-4">
+          <FormationSelector />
+          <Pitch
+            mode={mode}
+            onTapToken={onTapToken}
+            onLongPressSlot={onLongPressSlot}
+            onDropSwap={onDropSwap}
+            onDropFree={onDropFree}
+          />
+          {bench}
+        </div>
+      )}
 
       {/* mode banner — one live region, never two competing hints */}
       <div className="mt-3 px-4">
@@ -278,16 +410,14 @@ export function LineupScreen() {
         </AnimatePresence>
       </div>
 
-      <BenchStrip mode={mode} onSelectBench={onSelectBench} />
-
       <PlayerSheet
         open={sheet !== null}
         onClose={() => setSheet(null)}
         player={sheetPlayer}
         slotPos={sheetSlotDef?.pos}
-        fit={sheet && sheetTeam ? sheetTeam.chem.fits[sheet.slot] : undefined}
-        chem={sheet && sheetTeam ? sheetTeam.chem.perSlot[sheet.slot] : undefined}
-        membership="xi"
+        fit={sheet?.kind === 'slot' && sheetTeam ? sheetTeam.chem.fits[sheet.slot] : undefined}
+        chem={sheet?.kind === 'slot' && sheetTeam ? sheetTeam.chem.perSlot[sheet.slot] : undefined}
+        membership={sheet?.kind === 'bench' ? 'bench' : 'xi'}
         note={
           sheetEditable
             ? undefined
@@ -302,7 +432,7 @@ export function LineupScreen() {
                   hint: 'switch the active side',
                   primary: true,
                   onTap: () => {
-                    if (sheet) setActiveSide(sheet.side)
+                    if (sheet?.kind === 'slot') setActiveSide(sheet.side)
                     setSheet(null)
                   },
                 },

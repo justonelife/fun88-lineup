@@ -25,8 +25,10 @@ export default function App() {
     <div className="relative z-10 min-h-full">
       <Header onPlay={play} />
 
+      {/* The lineup board is a two-column workspace on a laptop; every other
+          screen is a reading column and stays narrow. */}
       <main
-        className="mx-auto max-w-3xl pt-3"
+        className={`mx-auto pt-3 ${tab === 'lineup' ? 'max-w-5xl' : 'max-w-3xl'}`}
         style={{ paddingBottom: 'calc(var(--app-tabbar-h) + var(--safe-bottom) + 1.5rem)' }}
       >
         <AnimatePresence mode="wait" initial={false}>

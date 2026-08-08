@@ -110,7 +110,7 @@ export function Header({ onPlay }: Props) {
 
   return (
     <header className="pt-safe sticky top-0 z-30 border-b border-hairline bg-base/85 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-2.5">
+      <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-2.5">
         <button
           onClick={() => setActiveSide('home')}
           aria-label={`Edit home — ${home.meta.name}`}
@@ -139,7 +139,7 @@ export function Header({ onPlay }: Props) {
         </button>
       </div>
 
-      <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 pb-2 text-2xs">
+      <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 pb-2 text-2xs">
         <span className="flex min-w-0 flex-1 items-center gap-2">
           <Pips n={home.subsLeft} accent={home.meta.accent} align="left" />
           <span className="label-micro truncate">{home.formation.name}</span>

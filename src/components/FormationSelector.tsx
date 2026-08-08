@@ -53,15 +53,15 @@ export function FormationSelector() {
 
   return (
     <section aria-label="Formation">
-      <div className="mb-2 flex items-baseline justify-between gap-3 px-4">
-        <h2 className="label-micro">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h2 className="label-micro shrink-0">
           Formation · <span style={{ color: meta.accent }}>{meta.label}</span>
         </h2>
-        <span className="truncate text-2xs text-ink-faint">
+        <span className="min-w-0 truncate text-2xs text-ink-faint">
           {FORMATIONS.find((f) => f.id === formationId)?.blurb}
         </span>
       </div>
-      <div className="scroll-x flex gap-2 px-4 pb-1">
+      <div className="scroll-x flex gap-2 pb-1">
         {FORMATIONS.map((f) => {
           const active = f.id === formationId
           return (
