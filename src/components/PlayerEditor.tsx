@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
+import { PhotoPicker } from './PhotoPicker'
 import { PlayerToken } from './PlayerToken'
 import { OvrBadge } from './ui/OvrBadge'
 import { Tappable } from './ui/Tappable'
@@ -16,7 +17,6 @@ import {
   ovrFromStats,
   type StatKey,
 } from '../lib/ovr'
-import { readPhoto, photoWeightKB } from '../lib/photo'
 import { tierOf } from '../lib/tiers'
 import { useSquad } from '../store/useSquad'
 import { toast } from '../store/useToast'
@@ -162,7 +162,7 @@ export function PlayerEditor({ mode, player, onClose, onSaved }: PlayerEditorPro
   const [stats, setStats] = useState<Stats>({ ...(player?.stats ?? BLANK_STATS) })
   const [photo, setPhoto] = useState<string | undefined>(player?.photo)
   const [touchedName, setTouchedName] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const ovr = ovrFromStats(pos, stats)
   const trimmed = name.trim()
@@ -219,19 +219,6 @@ export function PlayerEditor({ mode, player, onClose, onSaved }: PlayerEditorPro
   const toggleAlt = (p: Pos) => {
     if (p === pos) return
     setAlt((a) => (a.includes(p) ? a.filter((x) => x !== p) : [...a, p]))
-  }
-
-  const onFile = async (file: File | undefined) => {
-    if (!file) return
-    try {
-      const dataUrl = await readPhoto(file)
-      setPhoto(dataUrl)
-      toast(`Photo added · ~${photoWeightKB(dataUrl)}KB`)
-    } catch {
-      toast('That file could not be read as an image.', 'danger')
-    } finally {
-      if (fileRef.current) fileRef.current.value = ''
-    }
   }
 
   const save = () => {
@@ -351,21 +338,13 @@ export function PlayerEditor({ mode, player, onClose, onSaved }: PlayerEditorPro
 
           {/* photo controls sit with the card they change */}
           <div className="mt-2 flex gap-2">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              aria-label="Upload player photo"
-              className="hidden"
-              onChange={(e) => void onFile(e.target.files?.[0])}
-            />
             <Tappable
-              ariaLabel="Upload photo"
-              onTap={() => fileRef.current?.click()}
+              ariaLabel="Choose from team gallery"
+              onTap={() => setPickerOpen(true)}
               className="tap btn-ghost flex flex-1 items-center justify-center rounded-xl px-3 py-2.5"
             >
               <span className="display text-xs tracking-wider uppercase">
-                {photo ? 'Replace photo' : 'Upload photo'}
+                {photo ? 'Replace photo' : 'Choose from team gallery'}
               </span>
             </Tappable>
             {photo && (
@@ -557,6 +536,8 @@ export function PlayerEditor({ mode, player, onClose, onSaved }: PlayerEditorPro
           </Tappable>
         </div>
       </motion.div>
+
+      <PhotoPicker open={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={setPhoto} />
     </motion.div>
   )
 }
